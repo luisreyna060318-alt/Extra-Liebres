@@ -19,6 +19,9 @@ COPY package*.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/prisma ./prisma
+# Los scripts de prisma/ (seed e importacion) se ejecutan con tsx e importan
+# utilidades de src/ (calculo de desempeno, iniciales de IDs).
+COPY --from=build /app/src ./src
 COPY --from=build /app/node_modules/.prisma ./node_modules/.prisma
 # El proceso no necesita privilegios de root.
 USER node
