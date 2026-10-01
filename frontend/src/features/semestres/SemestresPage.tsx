@@ -1,11 +1,12 @@
 import { useState } from "react";
-import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
-import { LoadingSpinner } from "../../components/ui/LoadingSpinner";
+import { BuscadorListado } from "../../components/ui/BuscadorListado";
+import { EstadoConsulta } from "../../components/ui/EstadoConsulta";
 import { Pagination } from "../../components/ui/Pagination";
-import { getApiErrorMessage, getImpactoConfirmacion } from "../../lib/apiClient";
-import { useToast } from "../../lib/ToastContext";
+import { getApiErrorMessage } from "../../lib/apiClient";
+import { useBorradoConConfirmacion } from "../../lib/useBorradoConConfirmacion";
 import { useDebouncedValue } from "../../lib/useDebouncedValue";
 import { useFormularioColapsable } from "../../lib/useFormularioColapsable";
+import { useToast } from "../../lib/useToast";
 import { SemestreForm } from "./components/SemestreForm";
 import { SemestresTable } from "./components/SemestresTable";
 import { useCreateSemestre, useDeleteSemestre, useSemestres } from "./hooks";
@@ -17,14 +18,16 @@ export function SemestresPage() {
   const busquedaDebounced = useDebouncedValue(busqueda);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
-  const [confirmacion, setConfirmacion] = useState<{ idsemestre: string; mensaje: string } | null>(
-    null
-  );
   const { abierto, formRef, abrirCreacion, cerrar } = useFormularioColapsable(null);
 
-  const { data: resultado, isLoading } = useSemestres(busquedaDebounced, page, pageSize);
+  const consulta = useSemestres(busquedaDebounced, page, pageSize);
+  const resultado = consulta.data;
   const crear = useCreateSemestre();
   const borrar = useDeleteSemestre();
+  const borrado = useBorradoConConfirmacion({
+    borrar: (idsemestre, confirmar) => borrar.mutateAsync({ idsemestre, confirmar }),
+    mensajeExito: "Semestre borrado correctamente.",
+  });
 
   function handleCrear(input: CreateSemestreInput) {
     crear.mutate(input, {
@@ -34,40 +37,6 @@ export function SemestresPage() {
       },
       onError: (error) => showToast("danger", getApiErrorMessage(error)),
     });
-  }
-
-  function handleBorrar(idsemestre: string) {
-    borrar.mutate(
-      { idsemestre, confirmar: false },
-      {
-        onSuccess: () => showToast("success", "Semestre borrado correctamente."),
-        onError: (error) => {
-          const impacto = getImpactoConfirmacion(error);
-          if (impacto) {
-            setConfirmacion({ idsemestre, mensaje: impacto.mensaje });
-            return;
-          }
-          showToast("danger", getApiErrorMessage(error));
-        },
-      }
-    );
-  }
-
-  function handleConfirmarBorrado() {
-    if (!confirmacion) return;
-    borrar.mutate(
-      { idsemestre: confirmacion.idsemestre, confirmar: true },
-      {
-        onSuccess: () => {
-          showToast("success", "Semestre borrado correctamente.");
-          setConfirmacion(null);
-        },
-        onError: (error) => {
-          showToast("danger", getApiErrorMessage(error));
-          setConfirmacion(null);
-        },
-      }
-    );
   }
 
   return (
@@ -84,58 +53,41 @@ export function SemestresPage() {
         )}
       </div>
 
-      <div className="mb-3">
-        <div className="input-group" style={{ maxWidth: 420 }}>
-          <input
-            className="form-control"
-            placeholder="Buscar por anio..."
-            value={busqueda}
-            onChange={(e) => {
-              setBusqueda(e.target.value);
-              setPage(1);
-            }}
-          />
-          {busqueda && (
-            <button
-              type="button"
-              className="btn btn-outline-secondary"
-              onClick={() => {
-                setBusqueda("");
+      <BuscadorListado
+        etiqueta="Buscar semestres por anio"
+        placeholder="Buscar por anio (2025)..."
+        maxLength={4}
+        soloDigitos
+        valor={busqueda}
+        onChange={(valor) => {
+          setBusqueda(valor);
+          setPage(1);
+        }}
+      />
+
+      <EstadoConsulta
+        cargando={consulta.isLoading || !resultado}
+        error={consulta.error}
+        onReintentar={() => void consulta.refetch()}
+      >
+        {resultado && (
+          <>
+            <SemestresTable semestres={resultado.data} onBorrar={borrado.solicitarBorrado} />
+            <Pagination
+              page={resultado.page}
+              pageSize={resultado.pageSize}
+              total={resultado.total}
+              onPageChange={setPage}
+              onPageSizeChange={(nuevoTamano) => {
+                setPageSize(nuevoTamano);
                 setPage(1);
               }}
-            >
-              Limpiar
-            </button>
-          )}
-        </div>
-      </div>
+            />
+          </>
+        )}
+      </EstadoConsulta>
 
-      {isLoading || !resultado ? (
-        <LoadingSpinner />
-      ) : (
-        <>
-          <SemestresTable semestres={resultado.data} onBorrar={handleBorrar} />
-          <Pagination
-            page={resultado.page}
-            pageSize={resultado.pageSize}
-            total={resultado.total}
-            onPageChange={setPage}
-            onPageSizeChange={(nuevoTamano) => {
-              setPageSize(nuevoTamano);
-              setPage(1);
-            }}
-          />
-        </>
-      )}
-
-      {confirmacion && (
-        <ConfirmDialog
-          mensaje={confirmacion.mensaje}
-          enviando={borrar.isPending}
-          onConfirmar={handleConfirmarBorrado}
-          onCancelar={() => setConfirmacion(null)}
-        />
-      )}
+      {borrado.dialogo}
     </div>
   );
 }

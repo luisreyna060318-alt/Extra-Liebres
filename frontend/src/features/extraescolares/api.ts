@@ -1,4 +1,4 @@
-import { apiClient } from "../../lib/apiClient";
+import { apiClient, seg } from "../../lib/apiClient";
 import { PaginatedResponse } from "../../types/pagination";
 import { CreateExtraescolarInput, Extraescolar, UpdateExtraescolarInput } from "./types";
 
@@ -22,7 +22,7 @@ export async function updateExtraescolar(
   idextraescolar: string,
   input: UpdateExtraescolarInput
 ): Promise<Extraescolar> {
-  const { data } = await apiClient.put<Extraescolar>(`/extraescolares/${idextraescolar}`, input);
+  const { data } = await apiClient.put<Extraescolar>(`/extraescolares/${seg(idextraescolar)}`, input);
   return data;
 }
 
@@ -30,5 +30,5 @@ export async function deleteExtraescolar(
   idextraescolar: string,
   confirmar: boolean
 ): Promise<void> {
-  await apiClient.delete(`/extraescolares/${idextraescolar}`, { params: { confirmar } });
+  await apiClient.delete(`/extraescolares/${seg(idextraescolar)}`, { params: { confirmar } });
 }

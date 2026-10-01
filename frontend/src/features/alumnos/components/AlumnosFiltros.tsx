@@ -30,6 +30,7 @@ export function AlumnosFiltrosForm({ filtros, onChange }: AlumnosFiltrosProps) {
       <div className="col-md-4">
         <input
           className="form-control"
+          aria-label="Buscar alumnos por numero de control o nombre"
           placeholder="Buscar por numero de control o nombre..."
           value={filtros.search ?? ""}
           onChange={(e) => onChange({ ...filtros, search: e.target.value })}
@@ -37,6 +38,7 @@ export function AlumnosFiltrosForm({ filtros, onChange }: AlumnosFiltrosProps) {
       </div>
       <div className="col-md-3">
         <AsyncSelect<OpcionCarrera>
+          aria-label="Filtrar por carrera"
           cacheOptions
           defaultOptions
           isClearable
@@ -52,6 +54,7 @@ export function AlumnosFiltrosForm({ filtros, onChange }: AlumnosFiltrosProps) {
       <div className="col-md-2">
         <select
           className="form-select"
+          aria-label="Filtrar por campus"
           value={filtros.campus ?? ""}
           onChange={(e) =>
             onChange({ ...filtros, campus: (e.target.value || undefined) as Campus | undefined })
@@ -65,12 +68,13 @@ export function AlumnosFiltrosForm({ filtros, onChange }: AlumnosFiltrosProps) {
       <div className="col-md-3">
         <select
           className="form-select"
+          aria-label="Filtrar por sexo"
           value={filtros.sexo ?? ""}
           onChange={(e) =>
             onChange({ ...filtros, sexo: (e.target.value || undefined) as Sexo | undefined })
           }
         >
-          <option value="">Todos (masculino/femenino/sin especificar)</option>
+          <option value="">Todos los sexos</option>
           <option value="MASCULINO">MASCULINO</option>
           <option value="FEMENINO">FEMENINO</option>
         </select>

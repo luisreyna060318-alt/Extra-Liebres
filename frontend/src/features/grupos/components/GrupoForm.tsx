@@ -1,10 +1,10 @@
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useId, useState } from "react";
 import AsyncSelect from "react-select/async";
 import { fetchExtraescolares } from "../../extraescolares/api";
 import { fetchPromotores } from "../../promotores/api";
 import { fetchSemestres } from "../../semestres/api";
 import { DIAS_SEMANA, generarOpcionesHora } from "../horas";
-import { CreateGrupoInput, DiaSemana, Grupo } from "../types";
+import { CreateGrupoInput, DiaSemana, Grupo, UpdateGrupoInput } from "../types";
 
 interface Opcion {
   value: string;
@@ -13,21 +13,37 @@ interface Opcion {
 
 const HORAS = generarOpcionesHora();
 
-const ESTADO_INICIAL: CreateGrupoInput = {
+/** "" = sin valor (se envia como null al editar para que la API lo borre). */
+interface EstadoFormulario {
+  idextraescolar: string;
+  rfcpromotor: string;
+  idsemestre: string;
+  primerdia: DiaSemana | "";
+  segundodia: DiaSemana | "";
+  horainicio: string;
+  horatermino: string;
+  aula: string;
+}
+
+const ESTADO_INICIAL: EstadoFormulario = {
   idextraescolar: "",
   rfcpromotor: "",
   idsemestre: "",
-  primerdia: undefined,
-  segundodia: undefined,
-  horainicio: undefined,
-  horatermino: undefined,
+  primerdia: "",
+  segundodia: "",
+  horainicio: "",
+  horatermino: "",
   aula: "",
 };
+
+function posterior(dia: DiaSemana | "", referencia: DiaSemana | ""): boolean {
+  return Boolean(dia && referencia) && DIAS_SEMANA.indexOf(dia as DiaSemana) > DIAS_SEMANA.indexOf(referencia as DiaSemana);
+}
 
 interface GrupoFormProps {
   grupoEnEdicion: Grupo | null;
   onCrear: (input: CreateGrupoInput) => void;
-  onActualizar: (input: CreateGrupoInput) => void;
+  onActualizar: (input: UpdateGrupoInput) => void;
   onCancelar: () => void;
   enviando: boolean;
 }
@@ -39,7 +55,8 @@ export function GrupoForm({
   onCancelar,
   enviando,
 }: GrupoFormProps) {
-  const [form, setForm] = useState<CreateGrupoInput>(ESTADO_INICIAL);
+  const id = useId();
+  const [form, setForm] = useState<EstadoFormulario>(ESTADO_INICIAL);
   const editando = Boolean(grupoEnEdicion);
 
   useEffect(() => {
@@ -48,10 +65,10 @@ export function GrupoForm({
         idextraescolar: grupoEnEdicion.idextraescolar,
         rfcpromotor: grupoEnEdicion.rfcpromotor,
         idsemestre: grupoEnEdicion.idsemestre ?? "",
-        primerdia: grupoEnEdicion.primerdia ?? undefined,
-        segundodia: grupoEnEdicion.segundodia ?? undefined,
-        horainicio: grupoEnEdicion.horainicio ?? undefined,
-        horatermino: grupoEnEdicion.horatermino ?? undefined,
+        primerdia: grupoEnEdicion.primerdia ?? "",
+        segundodia: grupoEnEdicion.segundodia ?? "",
+        horainicio: grupoEnEdicion.horainicio ?? "",
+        horatermino: grupoEnEdicion.horatermino ?? "",
         aula: grupoEnEdicion.aula ?? "",
       });
     } else {
@@ -83,20 +100,47 @@ export function GrupoForm({
     }));
   }
 
+  // Al cambiar el primer dia o la hora de inicio se limpian el segundo dia y
+  // la hora de termino si dejan de ser validos (antes quedaban ocultos en el
+  // estado y la API rechazaba el formulario sin explicar por que).
+  function cambiarPrimerDia(primerdia: DiaSemana | "") {
+    setForm((actual) => ({
+      ...actual,
+      primerdia,
+      segundodia: posterior(actual.segundodia, primerdia) ? actual.segundodia : "",
+    }));
+  }
+
+  function cambiarHoraInicio(horainicio: string) {
+    setForm((actual) => ({
+      ...actual,
+      horainicio,
+      horatermino: !horainicio || actual.horatermino > horainicio ? actual.horatermino : "",
+    }));
+  }
+
+  const faltaRelacion = !editando && (!form.idextraescolar || !form.rfcpromotor || !form.idsemestre);
+  const horarioIncompleto = Boolean(form.horainicio) !== Boolean(form.horatermino);
+
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
-    const payload: CreateGrupoInput = {
-      ...form,
-      primerdia: form.primerdia || undefined,
-      segundodia: form.segundodia || undefined,
-      horainicio: form.horainicio || undefined,
-      horatermino: form.horatermino || undefined,
-      aula: form.aula || undefined,
+    if (faltaRelacion || horarioIncompleto) return;
+    const horario = {
+      primerdia: form.primerdia || null,
+      segundodia: form.segundodia || null,
+      horainicio: form.horainicio || null,
+      horatermino: form.horatermino || null,
+      aula: form.aula.trim() || null,
     };
     if (editando) {
-      onActualizar(payload);
+      onActualizar(horario);
     } else {
-      onCrear(payload);
+      onCrear({
+        idextraescolar: form.idextraescolar,
+        rfcpromotor: form.rfcpromotor,
+        idsemestre: form.idsemestre,
+        ...horario,
+      });
     }
   }
 
@@ -112,9 +156,12 @@ export function GrupoForm({
 
       <div className="row g-3">
         <div className="col-md-4">
-          <label className="form-label">Actividad extraescolar</label>
+          <label className="form-label" htmlFor={`${id}-actividad`}>
+            Actividad extraescolar
+          </label>
           {editando ? (
             <input
+              id={`${id}-actividad`}
               className="form-control"
               disabled
               readOnly
@@ -122,18 +169,24 @@ export function GrupoForm({
             />
           ) : (
             <AsyncSelect<Opcion>
+              inputId={`${id}-actividad`}
               cacheOptions
               defaultOptions
               loadOptions={cargarExtraescolares}
               placeholder="Buscar actividad..."
+              noOptionsMessage={() => "Sin resultados."}
+              loadingMessage={() => "Buscando..."}
               onChange={(opcion) => setForm({ ...form, idextraescolar: opcion?.value ?? "" })}
             />
           )}
         </div>
         <div className="col-md-4">
-          <label className="form-label">Promotor</label>
+          <label className="form-label" htmlFor={`${id}-promotor`}>
+            Promotor
+          </label>
           {editando ? (
             <input
+              id={`${id}-promotor`}
               className="form-control"
               disabled
               readOnly
@@ -141,42 +194,52 @@ export function GrupoForm({
             />
           ) : (
             <AsyncSelect<Opcion>
+              inputId={`${id}-promotor`}
               cacheOptions
               defaultOptions
               loadOptions={cargarPromotores}
               placeholder="Buscar promotor..."
+              noOptionsMessage={() => "Sin resultados."}
+              loadingMessage={() => "Buscando..."}
               onChange={(opcion) => setForm({ ...form, rfcpromotor: opcion?.value ?? "" })}
             />
           )}
         </div>
         <div className="col-md-4">
-          <label className="form-label">Semestre</label>
+          <label className="form-label" htmlFor={`${id}-semestre`}>
+            Semestre
+          </label>
           {editando ? (
             <input
+              id={`${id}-semestre`}
               className="form-control"
               disabled
               readOnly
-              value={grupoEnEdicion?.idsemestre ?? ""}
+              value={grupoEnEdicion?.idsemestre ?? "Sin asignar"}
             />
           ) : (
             <AsyncSelect<Opcion>
+              inputId={`${id}-semestre`}
               cacheOptions
               defaultOptions
               loadOptions={cargarSemestres}
               placeholder="Buscar semestre..."
+              noOptionsMessage={() => "Sin resultados."}
+              loadingMessage={() => "Buscando..."}
               onChange={(opcion) => setForm({ ...form, idsemestre: opcion?.value ?? "" })}
             />
           )}
         </div>
 
         <div className="col-md-3">
-          <label className="form-label">Primer dia</label>
+          <label className="form-label" htmlFor={`${id}-primerdia`}>
+            Primer dia
+          </label>
           <select
+            id={`${id}-primerdia`}
             className="form-select"
-            value={form.primerdia ?? ""}
-            onChange={(e) =>
-              setForm({ ...form, primerdia: (e.target.value || undefined) as DiaSemana | undefined })
-            }
+            value={form.primerdia}
+            onChange={(e) => cambiarPrimerDia(e.target.value as DiaSemana | "")}
           >
             <option value="">-- Ninguno --</option>
             {DIAS_SEMANA.map((dia) => (
@@ -187,20 +250,18 @@ export function GrupoForm({
           </select>
         </div>
         <div className="col-md-3">
-          <label className="form-label">Segundo dia</label>
+          <label className="form-label" htmlFor={`${id}-segundodia`}>
+            Segundo dia
+          </label>
           <select
+            id={`${id}-segundodia`}
             className="form-select"
             disabled={!form.primerdia}
-            value={form.segundodia ?? ""}
-            onChange={(e) =>
-              setForm({ ...form, segundodia: (e.target.value || undefined) as DiaSemana | undefined })
-            }
+            value={form.segundodia}
+            onChange={(e) => setForm({ ...form, segundodia: e.target.value as DiaSemana | "" })}
           >
             <option value="">-- Ninguno --</option>
-            {DIAS_SEMANA.filter(
-              (dia) =>
-                !form.primerdia || DIAS_SEMANA.indexOf(dia) > DIAS_SEMANA.indexOf(form.primerdia)
-            ).map((dia) => (
+            {DIAS_SEMANA.filter((dia) => posterior(dia, form.primerdia)).map((dia) => (
               <option key={dia} value={dia}>
                 {dia}
               </option>
@@ -208,11 +269,14 @@ export function GrupoForm({
           </select>
         </div>
         <div className="col-md-3">
-          <label className="form-label">Hora inicio</label>
+          <label className="form-label" htmlFor={`${id}-horainicio`}>
+            Hora inicio
+          </label>
           <select
+            id={`${id}-horainicio`}
             className="form-select"
-            value={form.horainicio ?? ""}
-            onChange={(e) => setForm({ ...form, horainicio: e.target.value || undefined })}
+            value={form.horainicio}
+            onChange={(e) => cambiarHoraInicio(e.target.value)}
           >
             <option value="">-- Ninguna --</option>
             {HORAS.map((hora) => (
@@ -223,11 +287,15 @@ export function GrupoForm({
           </select>
         </div>
         <div className="col-md-3">
-          <label className="form-label">Hora termino</label>
+          <label className="form-label" htmlFor={`${id}-horatermino`}>
+            Hora termino
+          </label>
           <select
-            className="form-select"
-            value={form.horatermino ?? ""}
-            onChange={(e) => setForm({ ...form, horatermino: e.target.value || undefined })}
+            id={`${id}-horatermino`}
+            className={`form-select${horarioIncompleto ? " is-invalid" : ""}`}
+            value={form.horatermino}
+            onChange={(e) => setForm({ ...form, horatermino: e.target.value })}
+            aria-describedby={horarioIncompleto ? `${id}-horario-error` : undefined}
           >
             <option value="">-- Ninguna --</option>
             {HORAS.filter((hora) => !form.horainicio || hora > form.horainicio).map((hora) => (
@@ -236,20 +304,38 @@ export function GrupoForm({
               </option>
             ))}
           </select>
+          {horarioIncompleto && (
+            <div className="invalid-feedback" id={`${id}-horario-error`}>
+              Captura la hora de inicio y la de termino, o ninguna.
+            </div>
+          )}
         </div>
         <div className="col-md-6">
-          <label className="form-label">Aula</label>
+          <label className="form-label" htmlFor={`${id}-aula`}>
+            Aula
+          </label>
           <input
+            id={`${id}-aula`}
             className="form-control"
             maxLength={50}
-            value={form.aula ?? ""}
+            value={form.aula}
             onChange={(e) => setForm({ ...form, aula: e.target.value })}
           />
         </div>
       </div>
 
+      {faltaRelacion && (
+        <p className="form-text mb-0 mt-2">
+          Selecciona la actividad, el promotor y el semestre para continuar.
+        </p>
+      )}
+
       <div className="btn-group-actions mt-3">
-        <button type="submit" className="btn btn-brand" disabled={enviando}>
+        <button
+          type="submit"
+          className="btn btn-brand"
+          disabled={enviando || faltaRelacion || horarioIncompleto}
+        >
           {editando ? "Guardar cambios" : "Agregar"}
         </button>
         <button

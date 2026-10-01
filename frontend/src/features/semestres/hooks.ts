@@ -1,13 +1,13 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { CLAVES, invalidar } from "../../lib/queryClient";
 import * as semestresApi from "./api";
 import { CreateSemestreInput } from "./types";
 
-const SEMESTRES_KEY = "semestres";
-
 export function useSemestres(search: string, page = 1, pageSize = 20) {
   return useQuery({
-    queryKey: [SEMESTRES_KEY, search, page, pageSize],
+    queryKey: [CLAVES.semestres, search, page, pageSize],
     queryFn: () => semestresApi.fetchSemestres(search, page, pageSize),
+    placeholderData: keepPreviousData,
   });
 }
 
@@ -15,7 +15,7 @@ export function useCreateSemestre() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (input: CreateSemestreInput) => semestresApi.createSemestre(input),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: [SEMESTRES_KEY] }),
+    onSuccess: () => invalidar(queryClient, CLAVES.semestres),
   });
 }
 
@@ -24,6 +24,7 @@ export function useDeleteSemestre() {
   return useMutation({
     mutationFn: ({ idsemestre, confirmar }: { idsemestre: string; confirmar: boolean }) =>
       semestresApi.deleteSemestre(idsemestre, confirmar),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: [SEMESTRES_KEY] }),
+    // Los grupos de ese semestre quedan sin semestre asignado.
+    onSuccess: () => invalidar(queryClient, CLAVES.semestres, CLAVES.grupos, CLAVES.historial),
   });
 }

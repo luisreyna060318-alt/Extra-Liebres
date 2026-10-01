@@ -37,7 +37,9 @@ export function CarritoInscripcion({
               <th>Nombre</th>
               <th>Calificacion</th>
               <th>Desempeno</th>
-              <th></th>
+              <th>
+                <span className="visually-hidden">Acciones</span>
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -47,6 +49,7 @@ export function CarritoInscripcion({
                 <td>{item.nombreCompleto}</td>
                 <td>
                   <select
+                    aria-label={`Calificacion de ${item.nombreCompleto}`}
                     className={`form-select form-select-sm${item.calificacion === null ? " is-invalid" : ""}`}
                     value={item.calificacion ?? ""}
                     onChange={(e) =>
@@ -68,6 +71,7 @@ export function CarritoInscripcion({
                   <button
                     type="button"
                     className="btn btn-sm btn-outline-danger"
+                    aria-label={`Quitar a ${item.nombreCompleto}`}
                     onClick={() => onQuitar(item.nocontrol)}
                   >
                     Quitar

@@ -1,9 +1,9 @@
-import { apiClient } from "../../lib/apiClient";
+import { apiClient, seg } from "../../lib/apiClient";
 import { HistorialAlumno } from "./types";
 
 export async function fetchHistorialAlumno(nocontrol: string): Promise<HistorialAlumno> {
   const { data } = await apiClient.get<HistorialAlumno>(
-    `/busqueda/alumnos/${nocontrol}/extraescolares`
+    `/busqueda/alumnos/${seg(nocontrol)}/extraescolares`
   );
   return data;
 }

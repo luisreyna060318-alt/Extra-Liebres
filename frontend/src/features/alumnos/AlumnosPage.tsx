@@ -1,17 +1,17 @@
 import { useState } from "react";
-import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
-import { LoadingSpinner } from "../../components/ui/LoadingSpinner";
+import { EstadoConsulta } from "../../components/ui/EstadoConsulta";
 import { Pagination } from "../../components/ui/Pagination";
-import { getApiErrorMessage, getImpactoConfirmacion } from "../../lib/apiClient";
-import { useToast } from "../../lib/ToastContext";
+import { getApiErrorMessage } from "../../lib/apiClient";
+import { useBorradoConConfirmacion } from "../../lib/useBorradoConConfirmacion";
 import { useDebouncedValue } from "../../lib/useDebouncedValue";
 import { useFormularioColapsable } from "../../lib/useFormularioColapsable";
+import { useToast } from "../../lib/useToast";
 import { AlumnoForm } from "./components/AlumnoForm";
 import { AlumnosFiltrosForm } from "./components/AlumnosFiltros";
 import { AlumnosTable } from "./components/AlumnosTable";
 import { getExportAlumnosUrl } from "./api";
 import { useAlumnos, useCreateAlumno, useDeleteAlumno, useUpdateAlumno } from "./hooks";
-import { Alumno, CreateAlumnoInput, FiltrosAlumnos } from "./types";
+import { Alumno, CreateAlumnoInput, FiltrosAlumnos, UpdateAlumnoInput } from "./types";
 
 export function AlumnosPage() {
   const { showToast } = useToast();
@@ -20,15 +20,17 @@ export function AlumnosPage() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [alumnoEnEdicion, setAlumnoEnEdicion] = useState<Alumno | null>(null);
-  const [confirmacion, setConfirmacion] = useState<{ nocontrol: string; mensaje: string } | null>(
-    null
-  );
   const { abierto, formRef, abrirCreacion, cerrar } = useFormularioColapsable(alumnoEnEdicion);
 
-  const { data: resultado, isLoading } = useAlumnos(filtrosDebounced, page, pageSize);
+  const consulta = useAlumnos(filtrosDebounced, page, pageSize);
+  const resultado = consulta.data;
   const crear = useCreateAlumno();
   const actualizar = useUpdateAlumno();
   const borrar = useDeleteAlumno();
+  const borrado = useBorradoConConfirmacion({
+    borrar: (nocontrol, confirmar) => borrar.mutateAsync({ nocontrol, confirmar }),
+    mensajeExito: "Alumno borrado correctamente.",
+  });
 
   function handleCrear(input: CreateAlumnoInput) {
     crear.mutate(input, {
@@ -40,7 +42,7 @@ export function AlumnosPage() {
     });
   }
 
-  function handleActualizar(input: CreateAlumnoInput) {
+  function handleActualizar(input: UpdateAlumnoInput) {
     if (!alumnoEnEdicion) return;
     actualizar.mutate(
       { nocontrol: alumnoEnEdicion.nocontrol, input },
@@ -57,40 +59,6 @@ export function AlumnosPage() {
   function handleCancelar() {
     setAlumnoEnEdicion(null);
     cerrar();
-  }
-
-  function handleBorrar(nocontrol: string) {
-    borrar.mutate(
-      { nocontrol, confirmar: false },
-      {
-        onSuccess: () => showToast("success", "Alumno borrado correctamente."),
-        onError: (error) => {
-          const impacto = getImpactoConfirmacion(error);
-          if (impacto) {
-            setConfirmacion({ nocontrol, mensaje: impacto.mensaje });
-            return;
-          }
-          showToast("danger", getApiErrorMessage(error));
-        },
-      }
-    );
-  }
-
-  function handleConfirmarBorrado() {
-    if (!confirmacion) return;
-    borrar.mutate(
-      { nocontrol: confirmacion.nocontrol, confirmar: true },
-      {
-        onSuccess: () => {
-          showToast("success", "Alumno borrado correctamente.");
-          setConfirmacion(null);
-        },
-        onError: (error) => {
-          showToast("danger", getApiErrorMessage(error));
-          setConfirmacion(null);
-        },
-      }
-    );
   }
 
   return (
@@ -143,37 +111,34 @@ export function AlumnosPage() {
         </button>
       )}
 
-      {isLoading || !resultado ? (
-        <LoadingSpinner />
-      ) : (
-        <>
-          <AlumnosTable
-            alumnos={resultado.data}
-            idEnEdicion={alumnoEnEdicion?.nocontrol}
-            onEditar={setAlumnoEnEdicion}
-            onBorrar={handleBorrar}
-          />
-          <Pagination
-            page={resultado.page}
-            pageSize={resultado.pageSize}
-            total={resultado.total}
-            onPageChange={setPage}
-            onPageSizeChange={(nuevoTamano) => {
-              setPageSize(nuevoTamano);
-              setPage(1);
-            }}
-          />
-        </>
-      )}
+      <EstadoConsulta
+        cargando={consulta.isLoading || !resultado}
+        error={consulta.error}
+        onReintentar={() => void consulta.refetch()}
+      >
+        {resultado && (
+          <>
+            <AlumnosTable
+              alumnos={resultado.data}
+              idEnEdicion={alumnoEnEdicion?.nocontrol}
+              onEditar={setAlumnoEnEdicion}
+              onBorrar={borrado.solicitarBorrado}
+            />
+            <Pagination
+              page={resultado.page}
+              pageSize={resultado.pageSize}
+              total={resultado.total}
+              onPageChange={setPage}
+              onPageSizeChange={(nuevoTamano) => {
+                setPageSize(nuevoTamano);
+                setPage(1);
+              }}
+            />
+          </>
+        )}
+      </EstadoConsulta>
 
-      {confirmacion && (
-        <ConfirmDialog
-          mensaje={confirmacion.mensaje}
-          enviando={borrar.isPending}
-          onConfirmar={handleConfirmarBorrado}
-          onCancelar={() => setConfirmacion(null)}
-        />
-      )}
+      {borrado.dialogo}
     </div>
   );
 }

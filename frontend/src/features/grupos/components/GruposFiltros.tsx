@@ -19,12 +19,12 @@ export function GruposFiltrosForm({ filtros, onChange }: GruposFiltrosFormProps)
   const [promotorSeleccionado, setPromotorSeleccionado] = useState<Opcion | null>(null);
 
   useEffect(() => {
-    if (!filtros.extraescolar) setActividadSeleccionada(null);
-  }, [filtros.extraescolar]);
+    if (!filtros.idextraescolar) setActividadSeleccionada(null);
+  }, [filtros.idextraescolar]);
 
   useEffect(() => {
-    if (!filtros.promotor) setPromotorSeleccionado(null);
-  }, [filtros.promotor]);
+    if (!filtros.rfcpromotor) setPromotorSeleccionado(null);
+  }, [filtros.rfcpromotor]);
 
   async function cargarExtraescolares(term: string): Promise<Opcion[]> {
     const resultado = await fetchExtraescolares(term, 1, 20);
@@ -39,10 +39,14 @@ export function GruposFiltrosForm({ filtros, onChange }: GruposFiltrosFormProps)
     }));
   }
 
+  // Se filtra por el ID de la opcion elegida (no por su texto): asi el filtro
+  // por promotor devuelve sus grupos y el de actividad no mezcla actividades
+  // cuyo nombre contiene al de la elegida.
   return (
     <div className="row g-3 mb-3">
       <div className="col-md-4">
         <AsyncSelect<Opcion>
+          aria-label="Filtrar por actividad extraescolar"
           cacheOptions
           defaultOptions
           isClearable
@@ -50,14 +54,16 @@ export function GruposFiltrosForm({ filtros, onChange }: GruposFiltrosFormProps)
           loadOptions={cargarExtraescolares}
           placeholder="Filtrar por actividad extraescolar..."
           noOptionsMessage={() => "Sin resultados."}
+          loadingMessage={() => "Buscando..."}
           onChange={(opcion) => {
             setActividadSeleccionada(opcion);
-            onChange({ ...filtros, extraescolar: opcion?.label });
+            onChange({ ...filtros, idextraescolar: opcion?.value });
           }}
         />
       </div>
       <div className="col-md-4">
         <AsyncSelect<Opcion>
+          aria-label="Filtrar por promotor"
           cacheOptions
           defaultOptions
           isClearable
@@ -65,17 +71,20 @@ export function GruposFiltrosForm({ filtros, onChange }: GruposFiltrosFormProps)
           loadOptions={cargarPromotores}
           placeholder="Filtrar por promotor..."
           noOptionsMessage={() => "Sin resultados."}
+          loadingMessage={() => "Buscando..."}
           onChange={(opcion) => {
             setPromotorSeleccionado(opcion);
-            onChange({ ...filtros, promotor: opcion?.label });
+            onChange({ ...filtros, rfcpromotor: opcion?.value });
           }}
         />
       </div>
       <div className="col-md-4">
         <input
           className="form-control"
+          aria-label="Filtrar por anio del semestre"
           placeholder="Filtrar por anio (2025)..."
           maxLength={4}
+          inputMode="numeric"
           value={filtros.anio ?? ""}
           onChange={(e) => onChange({ ...filtros, anio: e.target.value.replace(/\D/g, "") })}
         />

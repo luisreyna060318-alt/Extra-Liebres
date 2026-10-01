@@ -19,25 +19,27 @@ export interface Grupo {
   semestre: Semestre | null;
 }
 
-export interface CreateGrupoInput {
+export interface CreateGrupoInput extends UpdateGrupoInput {
   idextraescolar: string;
   rfcpromotor: string;
   idsemestre: string;
-  primerdia?: DiaSemana;
-  segundodia?: DiaSemana;
-  horainicio?: string;
-  horatermino?: string;
-  aula?: string;
 }
 
-export type UpdateGrupoInput = Partial<
-  Pick<CreateGrupoInput, "primerdia" | "segundodia" | "horainicio" | "horatermino" | "aula">
->;
+/** null vacia el campo; un campo ausente no se modifica. */
+export interface UpdateGrupoInput {
+  primerdia?: DiaSemana | null;
+  segundodia?: DiaSemana | null;
+  horainicio?: string | null;
+  horatermino?: string | null;
+  aula?: string | null;
+}
 
 export interface GruposFiltros {
   search?: string;
-  extraescolar?: string;
-  promotor?: string;
+  /** Filtro exacto por actividad. */
+  idextraescolar?: string;
+  /** Filtro exacto por promotor. */
+  rfcpromotor?: string;
   anio?: string;
   page?: number;
   pageSize?: number;

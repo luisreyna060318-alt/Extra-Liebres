@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useId, useState } from "react";
 import { Extraescolar } from "../types";
 
 interface ExtraescolarFormProps {
@@ -16,6 +16,7 @@ export function ExtraescolarForm({
   onCancelar,
   enviando,
 }: ExtraescolarFormProps) {
+  const id = useId();
   const [nombreextra, setNombreextra] = useState("");
   const editando = Boolean(extraescolarEnEdicion);
 
@@ -39,8 +40,11 @@ export function ExtraescolarForm({
       </h2>
       <div className="row g-3">
         <div className="col-md-6">
-          <label className="form-label">Nombre de la actividad</label>
+          <label className="form-label" htmlFor={`${id}-nombre`}>
+            Nombre de la actividad
+          </label>
           <input
+            id={`${id}-nombre`}
             className="form-control"
             required
             maxLength={120}

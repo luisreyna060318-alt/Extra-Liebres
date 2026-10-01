@@ -1,4 +1,4 @@
-import { apiClient } from "../../lib/apiClient";
+import { apiClient, seg } from "../../lib/apiClient";
 import { PaginatedResponse } from "../../types/pagination";
 import { Alumno, CreateAlumnoInput, FiltrosAlumnos, UpdateAlumnoInput } from "./types";
 
@@ -13,23 +13,18 @@ export async function fetchAlumnos(
   return data;
 }
 
-export async function fetchAlumno(nocontrol: string): Promise<Alumno> {
-  const { data } = await apiClient.get<Alumno>(`/alumnos/${nocontrol}`);
-  return data;
-}
-
 export async function createAlumno(input: CreateAlumnoInput): Promise<Alumno> {
   const { data } = await apiClient.post<Alumno>("/alumnos", input);
   return data;
 }
 
 export async function updateAlumno(nocontrol: string, input: UpdateAlumnoInput): Promise<Alumno> {
-  const { data } = await apiClient.put<Alumno>(`/alumnos/${nocontrol}`, input);
+  const { data } = await apiClient.put<Alumno>(`/alumnos/${seg(nocontrol)}`, input);
   return data;
 }
 
 export async function deleteAlumno(nocontrol: string, confirmar: boolean): Promise<void> {
-  await apiClient.delete(`/alumnos/${nocontrol}`, { params: { confirmar } });
+  await apiClient.delete(`/alumnos/${seg(nocontrol)}`, { params: { confirmar } });
 }
 
 /** URL lista para usar en un <a href> — el navegador maneja la descarga nativamente. */

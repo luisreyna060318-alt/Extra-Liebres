@@ -1,4 +1,4 @@
-import { apiClient } from "../../lib/apiClient";
+import { apiClient, seg } from "../../lib/apiClient";
 import { PaginatedResponse } from "../../types/pagination";
 import { CreateGrupoInput, Grupo, GruposFiltros, UpdateGrupoInput } from "./types";
 
@@ -8,7 +8,7 @@ export async function fetchGrupos(filtros: GruposFiltros): Promise<PaginatedResp
 }
 
 export async function fetchGrupo(idgrupo: string): Promise<Grupo> {
-  const { data } = await apiClient.get<Grupo>(`/grupos/${idgrupo}`);
+  const { data } = await apiClient.get<Grupo>(`/grupos/${seg(idgrupo)}`);
   return data;
 }
 
@@ -18,10 +18,10 @@ export async function createGrupo(input: CreateGrupoInput): Promise<Grupo> {
 }
 
 export async function updateGrupo(idgrupo: string, input: UpdateGrupoInput): Promise<Grupo> {
-  const { data } = await apiClient.put<Grupo>(`/grupos/${idgrupo}`, input);
+  const { data } = await apiClient.put<Grupo>(`/grupos/${seg(idgrupo)}`, input);
   return data;
 }
 
 export async function deleteGrupo(idgrupo: string, confirmar: boolean): Promise<void> {
-  await apiClient.delete(`/grupos/${idgrupo}`, { params: { confirmar } });
+  await apiClient.delete(`/grupos/${seg(idgrupo)}`, { params: { confirmar } });
 }

@@ -18,7 +18,15 @@ export function Pagination({ page, pageSize, total, onPageChange, onPageSizeChan
     setPaginaInput(String(page));
   }, [page]);
 
-  if (total === 0) return null;
+  // Si la pagina actual quedo fuera de rango (p. ej. se borro el ultimo
+  // registro de la ultima pagina), se regresa a la ultima pagina valida.
+  useEffect(() => {
+    if (total > 0 && page > totalPaginas) {
+      onPageChange(totalPaginas);
+    }
+  }, [page, total, totalPaginas, onPageChange]);
+
+  if (total === 0 || page > totalPaginas) return null;
 
   const desde = (page - 1) * pageSize + 1;
   const hasta = Math.min(page * pageSize, total);

@@ -1,11 +1,12 @@
 import { useState } from "react";
-import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
-import { LoadingSpinner } from "../../components/ui/LoadingSpinner";
+import { BuscadorListado } from "../../components/ui/BuscadorListado";
+import { EstadoConsulta } from "../../components/ui/EstadoConsulta";
 import { Pagination } from "../../components/ui/Pagination";
-import { getApiErrorMessage, getImpactoConfirmacion } from "../../lib/apiClient";
-import { useToast } from "../../lib/ToastContext";
+import { getApiErrorMessage } from "../../lib/apiClient";
+import { useBorradoConConfirmacion } from "../../lib/useBorradoConConfirmacion";
 import { useDebouncedValue } from "../../lib/useDebouncedValue";
 import { useFormularioColapsable } from "../../lib/useFormularioColapsable";
+import { useToast } from "../../lib/useToast";
 import { PromotorForm } from "./components/PromotorForm";
 import { PromotoresTable } from "./components/PromotoresTable";
 import {
@@ -23,13 +24,17 @@ export function PromotoresPage() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [promotorEnEdicion, setPromotorEnEdicion] = useState<Promotor | null>(null);
-  const [confirmacion, setConfirmacion] = useState<{ rfc: string; mensaje: string } | null>(null);
   const { abierto, formRef, abrirCreacion, cerrar } = useFormularioColapsable(promotorEnEdicion);
 
-  const { data: resultado, isLoading } = usePromotores(busquedaDebounced, page, pageSize);
+  const consulta = usePromotores(busquedaDebounced, page, pageSize);
+  const resultado = consulta.data;
   const crear = useCreatePromotor();
   const actualizar = useUpdatePromotor();
   const borrar = useDeletePromotor();
+  const borrado = useBorradoConConfirmacion({
+    borrar: (rfc, confirmar) => borrar.mutateAsync({ rfc, confirmar }),
+    mensajeExito: "Promotor borrado correctamente.",
+  });
 
   function handleCrear(input: CreatePromotorInput) {
     crear.mutate(input, {
@@ -43,8 +48,9 @@ export function PromotoresPage() {
 
   function handleActualizar(input: CreatePromotorInput) {
     if (!promotorEnEdicion) return;
+    const { nombre, appaterno, apmaterno } = input;
     actualizar.mutate(
-      { rfc: promotorEnEdicion.rfc, input },
+      { rfc: promotorEnEdicion.rfc, input: { nombre, appaterno, apmaterno } },
       {
         onSuccess: () => {
           showToast("success", "Promotor actualizado correctamente.");
@@ -58,40 +64,6 @@ export function PromotoresPage() {
   function handleCancelar() {
     setPromotorEnEdicion(null);
     cerrar();
-  }
-
-  function handleBorrar(rfc: string) {
-    borrar.mutate(
-      { rfc, confirmar: false },
-      {
-        onSuccess: () => showToast("success", "Promotor borrado correctamente."),
-        onError: (error) => {
-          const impacto = getImpactoConfirmacion(error);
-          if (impacto) {
-            setConfirmacion({ rfc, mensaje: impacto.mensaje });
-            return;
-          }
-          showToast("danger", getApiErrorMessage(error));
-        },
-      }
-    );
-  }
-
-  function handleConfirmarBorrado() {
-    if (!confirmacion) return;
-    borrar.mutate(
-      { rfc: confirmacion.rfc, confirmar: true },
-      {
-        onSuccess: () => {
-          showToast("success", "Promotor borrado correctamente.");
-          setConfirmacion(null);
-        },
-        onError: (error) => {
-          showToast("danger", getApiErrorMessage(error));
-          setConfirmacion(null);
-        },
-      }
-    );
   }
 
   return (
@@ -114,63 +86,44 @@ export function PromotoresPage() {
         )}
       </div>
 
-      <div className="mb-3">
-        <div className="input-group" style={{ maxWidth: 420 }}>
-          <input
-            className="form-control"
-            placeholder="Buscar por RFC o nombre..."
-            value={busqueda}
-            onChange={(e) => {
-              setBusqueda(e.target.value);
-              setPage(1);
-            }}
-          />
-          {busqueda && (
-            <button
-              type="button"
-              className="btn btn-outline-secondary"
-              onClick={() => {
-                setBusqueda("");
+      <BuscadorListado
+        etiqueta="Buscar promotores por RFC o nombre"
+        placeholder="Buscar por RFC o nombre..."
+        valor={busqueda}
+        onChange={(valor) => {
+          setBusqueda(valor);
+          setPage(1);
+        }}
+      />
+
+      <EstadoConsulta
+        cargando={consulta.isLoading || !resultado}
+        error={consulta.error}
+        onReintentar={() => void consulta.refetch()}
+      >
+        {resultado && (
+          <>
+            <PromotoresTable
+              promotores={resultado.data}
+              idEnEdicion={promotorEnEdicion?.rfc}
+              onEditar={setPromotorEnEdicion}
+              onBorrar={borrado.solicitarBorrado}
+            />
+            <Pagination
+              page={resultado.page}
+              pageSize={resultado.pageSize}
+              total={resultado.total}
+              onPageChange={setPage}
+              onPageSizeChange={(nuevoTamano) => {
+                setPageSize(nuevoTamano);
                 setPage(1);
               }}
-            >
-              Limpiar
-            </button>
-          )}
-        </div>
-      </div>
+            />
+          </>
+        )}
+      </EstadoConsulta>
 
-      {isLoading || !resultado ? (
-        <LoadingSpinner />
-      ) : (
-        <>
-          <PromotoresTable
-            promotores={resultado.data}
-            idEnEdicion={promotorEnEdicion?.rfc}
-            onEditar={setPromotorEnEdicion}
-            onBorrar={handleBorrar}
-          />
-          <Pagination
-            page={resultado.page}
-            pageSize={resultado.pageSize}
-            total={resultado.total}
-            onPageChange={setPage}
-            onPageSizeChange={(nuevoTamano) => {
-              setPageSize(nuevoTamano);
-              setPage(1);
-            }}
-          />
-        </>
-      )}
-
-      {confirmacion && (
-        <ConfirmDialog
-          mensaje={confirmacion.mensaje}
-          enviando={borrar.isPending}
-          onConfirmar={handleConfirmarBorrado}
-          onCancelar={() => setConfirmacion(null)}
-        />
-      )}
+      {borrado.dialogo}
     </div>
   );
 }

@@ -83,3 +83,30 @@
   border-color: #dc3545;
   opacity: 0.65;
 }
+
+/*
+ * Barra de navegacion: con el gris semitransparente de navbar-dark los
+ * enlaces quedaban a 2.27:1 sobre el rojo (WCAG pide 4.5:1). Blanco solido da
+ * 4.5:1; el enlace activo se distingue con subrayado y negrita.
+ */
+.navbar-itcj {
+  --bs-navbar-color: #fff;
+  --bs-navbar-hover-color: #fff;
+  --bs-navbar-active-color: #fff;
+}
+.navbar-itcj .nav-link.active {
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 0.35em;
+}
+.navbar-itcj .nav-link:hover,
+.navbar-itcj .nav-link:focus-visible {
+  text-decoration: underline;
+  text-underline-offset: 0.35em;
+}
+/* Los desplegables son <button> (no enlaces "#"); nav-link ya les quita fondo y borde. */
+.navbar-itcj .dropdown-toggle.active {
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 0.35em;
+}

@@ -8,16 +8,19 @@ import { useSemestres } from "../semestres/hooks";
 
 interface StatTileProps {
   titulo: string;
-  valor: number | undefined;
-  cargando: boolean;
+  consulta: { data?: { total: number }; isLoading: boolean; isError: boolean };
 }
 
-function StatTile({ titulo, valor, cargando }: StatTileProps) {
+function StatTile({ titulo, consulta }: StatTileProps) {
+  let valor: string | number = "...";
+  if (consulta.isError) valor = "—";
+  else if (!consulta.isLoading && consulta.data) valor = consulta.data.total;
   return (
     <div className="col-6 col-md-4 col-lg-2">
       <div className="card card-body text-center h-100">
         <span className="text-muted small">{titulo}</span>
-        <span className="fs-4 fw-bold">{cargando ? "..." : valor}</span>
+        <span className="fs-4 fw-bold">{valor}</span>
+        {consulta.isError && <span className="small text-danger">No disponible</span>}
       </div>
     </div>
   );
@@ -58,20 +61,12 @@ export function HomePage() {
 
       <h2 className="h6 label-subrayado">Resumen</h2>
       <div className="row g-3 mb-4">
-        <StatTile titulo="Alumnos" valor={alumnos.data?.total} cargando={alumnos.isLoading} />
-        <StatTile titulo="Grupos" valor={grupos.data?.total} cargando={grupos.isLoading} />
-        <StatTile titulo="Carreras" valor={carreras.data?.total} cargando={carreras.isLoading} />
-        <StatTile
-          titulo="Promotores"
-          valor={promotores.data?.total}
-          cargando={promotores.isLoading}
-        />
-        <StatTile
-          titulo="Extraescolares"
-          valor={extraescolares.data?.total}
-          cargando={extraescolares.isLoading}
-        />
-        <StatTile titulo="Semestres" valor={semestres.data?.total} cargando={semestres.isLoading} />
+        <StatTile titulo="Alumnos" consulta={alumnos} />
+        <StatTile titulo="Grupos" consulta={grupos} />
+        <StatTile titulo="Carreras" consulta={carreras} />
+        <StatTile titulo="Promotores" consulta={promotores} />
+        <StatTile titulo="Extraescolares" consulta={extraescolares} />
+        <StatTile titulo="Semestres" consulta={semestres} />
       </div>
 
       <h2 className="h6 label-subrayado">Accesos rapidos</h2>

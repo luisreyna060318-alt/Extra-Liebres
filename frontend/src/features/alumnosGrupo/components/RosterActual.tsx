@@ -4,9 +4,10 @@ import { RosterGrupo } from "../types";
 interface RosterActualProps {
   roster: RosterGrupo;
   onRetirar: (nocontrol: string) => void;
+  retirando?: boolean;
 }
 
-export function RosterActual({ roster, onRetirar }: RosterActualProps) {
+export function RosterActual({ roster, onRetirar, retirando = false }: RosterActualProps) {
   return (
     <div>
       <div className="row mb-3">
@@ -74,7 +75,8 @@ export function RosterActual({ roster, onRetirar }: RosterActualProps) {
                     <td>
                       <ConfirmButton
                         className="btn btn-sm btn-outline-danger"
-                        confirmMessage={`¿Retirar a ${alumno.nocontrol} de este grupo?`}
+                        disabled={retirando}
+                        confirmMessage={`¿Retirar a ${alumno.nombre} ${alumno.appaterno} (${alumno.nocontrol}) de este grupo? Se perdera su calificacion registrada.`}
                         onConfirm={() => onRetirar(alumno.nocontrol)}
                       >
                         Retirar
@@ -100,7 +102,8 @@ export function RosterActual({ roster, onRetirar }: RosterActualProps) {
                 <div className="btn-group-actions mt-3">
                   <ConfirmButton
                     className="btn btn-sm btn-outline-danger flex-fill"
-                    confirmMessage={`¿Retirar a ${alumno.nocontrol} de este grupo?`}
+                    disabled={retirando}
+                    confirmMessage={`¿Retirar a ${alumno.nombre} ${alumno.appaterno} (${alumno.nocontrol}) de este grupo? Se perdera su calificacion registrada.`}
                     onConfirm={() => onRetirar(alumno.nocontrol)}
                   >
                     Retirar
