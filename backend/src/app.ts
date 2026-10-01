@@ -16,6 +16,12 @@ import { semestresRouter } from "./modules/semestres/semestres.routes";
 export function createApp(): Application {
   const app = express();
 
+  // Detras de nginx, req.ip (y los logs) deben tomar la IP real del cliente
+  // de X-Forwarded-For en lugar de la del proxy.
+  if (env.trustProxy > 0) {
+    app.set("trust proxy", env.trustProxy);
+  }
+
   app.use(helmet());
   app.use(cors({ origin: env.corsOrigin }));
   app.use(express.json());
