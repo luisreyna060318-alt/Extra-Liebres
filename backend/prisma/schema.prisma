@@ -1,0 +1,142 @@
+// Esquema de base de datos para el sistema de actividades extraescolares (ITCJ).
+// Migrado desde el esquema MySQL implicito del sistema PHP legado hacia PostgreSQL.
+
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Sexo {
+  MASCULINO
+  FEMENINO
+}
+
+enum Campus {
+  CAMPUS_1 @map("CAMPUS 1")
+  CAMPUS_2 @map("CAMPUS 2")
+}
+
+enum DiaSemana {
+  LUNES
+  MARTES
+  MIERCOLES @map("MIÉRCOLES")
+  JUEVES
+  VIERNES
+  SABADO    @map("SÁBADO")
+}
+
+/// Alumno inscrito en el instituto, sujeto de inscripcion a grupos extraescolares.
+model Alumno {
+  nocontrol  String   @id @db.VarChar(11)
+  nombre     String   @db.VarChar(50)
+  appaterno  String   @db.VarChar(50)
+  apmaterno  String?  @db.VarChar(50)
+  sexo       Sexo?
+  idcarrera  String
+  campus     Campus
+  creadoEn   DateTime @default(now()) @map("creado_en")
+  actualizadoEn DateTime @updatedAt @map("actualizado_en")
+
+  carrera       Carrera       @relation(fields: [idcarrera], references: [idcarrera], onDelete: Restrict)
+  inscripciones AlumnoGrupo[]
+
+  @@index([idcarrera])
+  @@map("alumno")
+}
+
+/// Catalogo de carreras/programas academicos que puede cursar un alumno.
+model Carrera {
+  idcarrera String   @id @db.VarChar(20)
+  nombre    String   @unique @db.VarChar(120)
+  creadoEn  DateTime @default(now()) @map("creado_en")
+
+  alumnos Alumno[]
+
+  @@map("carrera")
+}
+
+/// Promotor / instructor a cargo de uno o mas grupos extraescolares.
+model Promotor {
+  rfc        String   @id @db.VarChar(13)
+  nombre     String   @db.VarChar(50)
+  appaterno  String   @db.VarChar(50)
+  apmaterno  String   @db.VarChar(50)
+  creadoEn   DateTime @default(now()) @map("creado_en")
+  actualizadoEn DateTime @updatedAt @map("actualizado_en")
+
+  grupos Grupo[]
+
+  @@map("promotor")
+}
+
+/// Periodo academico (semestre) durante el cual se ofrecen los grupos.
+model Semestre {
+  idsemestre String   @id @db.VarChar(6)
+  mesinicio  String   @db.VarChar(20)
+  mestermino String   @db.VarChar(20)
+  anio       String   @db.VarChar(4)
+  creadoEn   DateTime @default(now()) @map("creado_en")
+
+  grupos Grupo[]
+
+  @@map("semestre")
+}
+
+/// Catalogo de actividades extraescolares ofertadas (futbol, ajedrez, etc).
+model Extraescolar {
+  idextraescolar String   @id @db.VarChar(20)
+  nombreextra    String   @unique @db.VarChar(120)
+  creadoEn       DateTime @default(now()) @map("creado_en")
+
+  grupos Grupo[]
+
+  @@map("extraescolar")
+}
+
+/// Grupo/oferta concreta de una actividad extraescolar: cruza actividad + promotor + semestre.
+model Grupo {
+  idgrupo        String     @id @db.VarChar(120)
+  primerdia      DiaSemana?
+  segundodia     DiaSemana?
+  horainicio     String?    @db.VarChar(5)
+  horatermino    String?    @db.VarChar(5)
+  aula           String?    @db.VarChar(50)
+  idsemestre     String?
+  idextraescolar String
+  rfcpromotor    String
+  creadoEn       DateTime   @default(now()) @map("creado_en")
+
+  // Extraescolar/promotor: borrado en cascada (con advertencia explicita a
+  // nivel de aplicacion antes de confirmar, ver alumnosGrupo/*.service.ts).
+  // Semestre: SetNull porque desvincular el periodo es menos destructivo que
+  // borrar los grupos.
+  semestre     Semestre?     @relation(fields: [idsemestre], references: [idsemestre], onDelete: SetNull)
+  extraescolar Extraescolar  @relation(fields: [idextraescolar], references: [idextraescolar], onDelete: Cascade)
+  promotor     Promotor      @relation(fields: [rfcpromotor], references: [rfc], onDelete: Cascade)
+  alumnos      AlumnoGrupo[]
+
+  @@index([idextraescolar])
+  @@index([rfcpromotor])
+  @@index([idsemestre])
+  @@map("grupo")
+}
+
+/// Tabla de enlace: inscripcion de un alumno a un grupo, con su calificacion.
+model AlumnoGrupo {
+  nocontrol    String
+  idgrupo      String
+  calificacion Int    @db.SmallInt
+  desempeno    String @db.VarChar(20)
+
+  alumno Alumno @relation(fields: [nocontrol], references: [nocontrol], onDelete: Cascade)
+  grupo  Grupo  @relation(fields: [idgrupo], references: [idgrupo], onDelete: Cascade)
+
+  @@id([nocontrol, idgrupo])
+  @@index([idgrupo])
+  @@map("alumnosgrupo")
+}

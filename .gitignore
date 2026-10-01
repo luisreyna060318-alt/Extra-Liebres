@@ -1,0 +1,15 @@
+node_modules/
+dist/
+build/
+.env
+.env.local
+*.log
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+coverage/
+pgdata/
+
+# Respaldo del sistema original con datos personales reales de alumnos: no se versiona.
+backend/prisma/legacy/extraliebresdb.sql

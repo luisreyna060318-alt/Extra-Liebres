@@ -1,0 +1,85 @@
+/* Adaptado de plantillas/estilos.css del sistema original */
+
+.table thead th {
+  background-color: #dc3545;
+  color: #fff;
+}
+
+.label-subrayado {
+  text-decoration: underline;
+  font-weight: 600;
+}
+
+.btn-group-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.page-title {
+  border-bottom: 3px solid #dc3545;
+  padding-bottom: 0.5rem;
+  margin-bottom: 1.5rem;
+}
+
+/* Tarjetas de acceso rapido en el panel de inicio. */
+.accion-rapida {
+  transition: box-shadow 0.15s ease, border-color 0.15s ease;
+}
+.accion-rapida:hover,
+.accion-rapida:focus {
+  border-color: #dc3545;
+  box-shadow: 0 0.25rem 0.5rem rgba(220, 53, 69, 0.12);
+}
+
+/* Pares etiqueta/valor dentro de las tarjetas de tabla en movil. */
+.row-kv {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.35rem 0.75rem;
+  font-size: 0.875rem;
+}
+.row-kv > div {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+}
+.row-kv dt {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: #6c757d;
+  font-weight: 600;
+}
+.row-kv dd {
+  margin: 0;
+  overflow-wrap: break-word;
+}
+.mono {
+  font-variant-numeric: tabular-nums;
+}
+
+/*
+ * Boton solido para acciones principales (Agregar, Guardar, Inscribir).
+ * Visualmente identico a btn-danger (mismo rojo de marca), pero con su
+ * propio nombre: btn-danger queda reservado para acciones destructivas.
+ */
+.btn-brand {
+  color: #fff;
+  background-color: #dc3545;
+  border-color: #dc3545;
+}
+.btn-brand:hover,
+.btn-brand:focus {
+  color: #fff;
+  background-color: #bb2d3b;
+  border-color: #b02a37;
+}
+.btn-brand:disabled,
+.btn-brand.disabled {
+  color: #fff;
+  background-color: #dc3545;
+  border-color: #dc3545;
+  opacity: 0.65;
+}
