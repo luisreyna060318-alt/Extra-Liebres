@@ -1,48 +1,40 @@
+import { Prisma } from "@prisma/client";
 import { prisma } from "../config/prisma";
+import { iniciales } from "./iniciales";
 
 /**
- * Generadores de identificadores de negocio, portados 1:1 desde la logica
- * PHP original. Estos IDs siguen siendo generados por el backend (nunca por
- * el cliente) para preservar el formato historico de datos.
+ * Generadores de identificadores de negocio, portados desde la logica PHP
+ * original. Estos IDs siguen siendo generados por el backend (nunca por el
+ * cliente) para preservar el formato historico de datos.
+ *
+ * Los que usan un consecutivo leen la tabla para calcular el siguiente: deben
+ * llamarse dentro de conCandado() (utils/bloqueo.ts) para que dos altas
+ * simultaneas no obtengan el mismo numero.
  */
 
-/** "Futbol Soccer" -> "FS", "Club de Ajedrez" -> "CDA" */
-function iniciales(nombre: string): string {
-  return nombre
-    .trim()
-    .split(/\s+/)
-    .map((palabra) => palabra.charAt(0).toUpperCase())
-    .join("");
-}
+type Db = Prisma.TransactionClient | typeof prisma;
 
-/** "{consecutivo}-{iniciales(nombre)}" a partir de los IDs con ese mismo formato ya existentes. */
-function siguienteIdConIniciales(idsExistentes: string[], nombre: string): string {
+/** Mayor prefijo numerico ("12" en "12-FS") de una lista de IDs, + 1. */
+export function siguienteConsecutivo(idsExistentes: string[]): number {
   const maximo = idsExistentes.reduce((max, id) => {
     const prefijo = Number.parseInt(id.split("-")[0] ?? "", 10);
     return Number.isFinite(prefijo) ? Math.max(max, prefijo) : max;
   }, 0);
-
-  return `${maximo + 1}-${iniciales(nombre)}`;
+  return maximo + 1;
 }
 
 /** idextraescolar = "{consecutivo}-{iniciales(nombreextra)}", p.ej. "12-FS" */
-export async function generarIdExtraescolar(nombreextra: string): Promise<string> {
-  const existentes = await prisma.extraescolar.findMany({
-    select: { idextraescolar: true },
-  });
-  return siguienteIdConIniciales(
-    existentes.map((e) => e.idextraescolar),
-    nombreextra
-  );
+export async function generarIdExtraescolar(nombreextra: string, db: Db = prisma): Promise<string> {
+  const existentes = await db.extraescolar.findMany({ select: { idextraescolar: true } });
+  const consecutivo = siguienteConsecutivo(existentes.map((e) => e.idextraescolar));
+  return `${consecutivo}-${iniciales(nombreextra)}`;
 }
 
 /** idcarrera = "{consecutivo}-{iniciales(nombre)}", p.ej. "1-II" para "Ingenieria Industrial" */
-export async function generarIdCarrera(nombre: string): Promise<string> {
-  const existentes = await prisma.carrera.findMany({ select: { idcarrera: true } });
-  return siguienteIdConIniciales(
-    existentes.map((c) => c.idcarrera),
-    nombre
-  );
+export async function generarIdCarrera(nombre: string, db: Db = prisma): Promise<string> {
+  const existentes = await db.carrera.findMany({ select: { idcarrera: true } });
+  const consecutivo = siguienteConsecutivo(existentes.map((c) => c.idcarrera));
+  return `${consecutivo}-${iniciales(nombre)}`;
 }
 
 const PAR_MESES: Record<string, string> = {
@@ -69,15 +61,20 @@ export function generarIdSemestre(
 
 /**
  * idgrupo = "{consecutivo}-{idextraescolar sin guiones}-{primeros 10 del rfc}-{idsemestre sin guiones}"
+ * El consecutivo es el mayor existente + 1 (no el total de grupos: tras borrar
+ * uno, "total + 1" repetia un consecutivo que ya existia).
  * El semestre es opcional en el modelo de datos; si no se asigna, se usa el marcador "SINSEM".
  */
-export async function generarIdGrupo(params: {
-  idextraescolar: string;
-  rfcpromotor: string;
-  idsemestre?: string | null;
-}): Promise<string> {
-  const total = await prisma.grupo.count();
-  const consecutivo = total + 1;
+export async function generarIdGrupo(
+  params: {
+    idextraescolar: string;
+    rfcpromotor: string;
+    idsemestre?: string | null;
+  },
+  db: Db = prisma
+): Promise<string> {
+  const existentes = await db.grupo.findMany({ select: { idgrupo: true } });
+  const consecutivo = siguienteConsecutivo(existentes.map((g) => g.idgrupo));
 
   const extraescolarSinGuion = params.idextraescolar.replace(/-/g, "");
   const rfcCorto = params.rfcpromotor.slice(0, 10);

@@ -1,16 +1,24 @@
-/** Escapa un valor para CSV (RFC 4180): comillas dobles si contiene coma, comilla o salto de linea. */
-function escaparCampoCsv(valor: unknown): string {
+// Marca de orden de bytes UTF-8: sin ella, Excel abre el CSV asumiendo la
+// codificacion local de Windows y descompone los acentos.
+const BOM_UTF8 = "﻿";
+
+// Excel (y otras hojas de calculo) interpretan como formula un valor que
+// empieza con estos caracteres. Anteponer un apostrofo lo muestra como texto
+// y evita que un nombre como =HYPERLINK(...) se ejecute al abrir el archivo.
+const INICIO_DE_FORMULA = /^[=+\-@\t\r]/;
+
+/** Escapa un valor para CSV (RFC 4180) y neutraliza formulas. */
+export function escaparCampoCsv(valor: unknown): string {
   if (valor === null || valor === undefined) return "";
-  const texto = String(valor);
+  let texto = String(valor);
+  if (INICIO_DE_FORMULA.test(texto)) {
+    texto = `'${texto}`;
+  }
   if (/[",\n\r]/.test(texto)) {
     return `"${texto.replace(/"/g, '""')}"`;
   }
   return texto;
 }
-
-// Marca de orden de bytes UTF-8 (﻿): sin ella, Excel abre el CSV
-// asumiendo la codificacion local de Windows y descompone los acentos.
-const BOM_UTF8 = "﻿";
 
 /**
  * Convierte un arreglo de objetos a texto CSV, usando `columnas` para fijar

@@ -5,7 +5,8 @@ import { paginationQuerySchema } from "../../utils/pagination";
 const rfcRegex = /^[A-ZÑ&]{3,4}\d{6}[A-Z0-9]{3}$/i;
 
 export const rfcParamSchema = z.object({
-  rfc: z.string().trim().min(1).max(13),
+  // El alta guarda el RFC en mayusculas: la busqueda por ruta tambien lo normaliza.
+  rfc: z.string().trim().toUpperCase().min(1).max(13),
 });
 
 export const listPromotoresQuerySchema = paginationQuerySchema.extend({

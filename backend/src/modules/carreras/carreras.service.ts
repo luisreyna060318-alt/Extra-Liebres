@@ -1,12 +1,17 @@
+import { Prisma } from "@prisma/client";
 import { prisma } from "../../config/prisma";
 import { ApiError } from "../../utils/ApiError";
+import { conCandado } from "../../utils/bloqueo";
+import { cadaPalabraEnAlgunCampo } from "../../utils/busqueda";
 import { generarIdCarrera } from "../../utils/idGenerators";
 import { calcularSkip, paginar } from "../../utils/pagination";
 import { reintentarSiIdDuplicado } from "../../utils/retry";
 import { CreateCarreraInput, UpdateCarreraInput } from "./carreras.schema";
 
 export async function searchCarreras(search: string | undefined, page: number, pageSize: number) {
-  const where = search ? { nombre: { contains: search, mode: "insensitive" as const } } : undefined;
+  const where = cadaPalabraEnAlgunCampo<Prisma.CarreraWhereInput>(search, (palabra) => [
+    { nombre: { contains: palabra, mode: "insensitive" } },
+  ]);
 
   const [data, total] = await Promise.all([
     prisma.carrera.findMany({
@@ -35,14 +40,24 @@ export async function createCarrera(data: CreateCarreraInput) {
     throw ApiError.conflict(`Ya existe la carrera "${data.nombre}".`);
   }
 
-  return reintentarSiIdDuplicado(async () => {
-    const idcarrera = await generarIdCarrera(data.nombre);
-    return prisma.carrera.create({ data: { idcarrera, nombre: data.nombre } });
-  });
+  return reintentarSiIdDuplicado(
+    () =>
+      conCandado("carrera.idcarrera", async (tx) => {
+        const idcarrera = await generarIdCarrera(data.nombre, tx);
+        return tx.carrera.create({ data: { idcarrera, nombre: data.nombre } });
+      }),
+    "idcarrera"
+  );
 }
 
 export async function updateCarrera(idcarrera: string, data: UpdateCarreraInput) {
   await getCarreraById(idcarrera);
+  const homonima = await prisma.carrera.findFirst({
+    where: { nombre: data.nombre, NOT: { idcarrera } },
+  });
+  if (homonima) {
+    throw ApiError.conflict(`Ya existe la carrera "${data.nombre}".`);
+  }
   return prisma.carrera.update({ where: { idcarrera }, data });
 }
 

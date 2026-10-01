@@ -22,10 +22,20 @@ export function createApp(): Application {
     app.set("trust proxy", env.trustProxy);
   }
 
+  // El registro de accesos va antes del parser JSON: asi tambien quedan
+  // registradas las peticiones que el parser rechaza (JSON invalido, 413).
+  // Los health checks exitosos (cada pocos segundos en Docker) se omiten.
+  // En las pruebas se omite para no llenar la salida de vitest.
+  if (env.nodeEnv !== "test") {
+    app.use(
+      morgan(env.nodeEnv === "development" ? "dev" : "combined", {
+        skip: (req, res) => req.originalUrl === "/api/health" && res.statusCode < 400,
+      })
+    );
+  }
   app.use(helmet());
   app.use(cors({ origin: env.corsOrigin }));
   app.use(express.json());
-  app.use(morgan(env.nodeEnv === "development" ? "dev" : "combined"));
 
   app.get("/api/health", async (_req, res) => {
     try {

@@ -1,21 +1,24 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
-vi.mock("../../config/prisma", () => ({
-  prisma: {
-    extraescolar: { findMany: vi.fn() },
-    carrera: { findMany: vi.fn() },
-    grupo: { count: vi.fn() },
-  },
-}));
+vi.mock("../../config/prisma", () => ({ prisma: {} }));
 
-import { prisma } from "../../config/prisma";
 import {
   generarIdCarrera,
   generarIdExtraescolar,
   generarIdGrupo,
   generarIdSemestre,
   mesTerminoEsperado,
+  siguienteConsecutivo,
 } from "../idGenerators";
+
+/** Cliente simulado: findMany devuelve los IDs indicados para la tabla pedida. */
+function dbCon(ids: { extraescolar?: string[]; carrera?: string[]; grupo?: string[] }) {
+  return {
+    extraescolar: { findMany: vi.fn().mockResolvedValue((ids.extraescolar ?? []).map((idextraescolar) => ({ idextraescolar }))) },
+    carrera: { findMany: vi.fn().mockResolvedValue((ids.carrera ?? []).map((idcarrera) => ({ idcarrera }))) },
+    grupo: { findMany: vi.fn().mockResolvedValue((ids.grupo ?? []).map((idgrupo) => ({ idgrupo }))) },
+  } as never;
+}
 
 describe("generarIdSemestre", () => {
   it("compone iniciales + ultimos 2 digitos del anio", () => {
@@ -31,61 +34,57 @@ describe("mesTerminoEsperado", () => {
   });
 });
 
-describe("generarIdExtraescolar", () => {
-  beforeEach(() => vi.clearAllMocks());
+describe("siguienteConsecutivo", () => {
+  it("usa el mayor prefijo numerico existente + 1, sin importar huecos ni orden", () => {
+    expect(siguienteConsecutivo([])).toBe(1);
+    expect(siguienteConsecutivo(["3-A", "12-BER", "7-X", "SIN-NUMERO"])).toBe(13);
+  });
+});
 
+describe("generarIdExtraescolar", () => {
   it("usa 1 como consecutivo cuando no hay actividades previas", async () => {
-    vi.mocked(prisma.extraescolar.findMany).mockResolvedValue([]);
-    expect(await generarIdExtraescolar("Futbol Soccer")).toBe("1-FS");
+    expect(await generarIdExtraescolar("Futbol Soccer", dbCon({}))).toBe("1-FS");
   });
 
   it("continua desde el maximo prefijo numerico existente", async () => {
-    vi.mocked(prisma.extraescolar.findMany).mockResolvedValue([
-      { idextraescolar: "3-A" },
-      { idextraescolar: "12-BER" },
-      { idextraescolar: "7-X" },
-    ] as never);
-    expect(await generarIdExtraescolar("Club de Ajedrez")).toBe("13-CDA");
+    const db = dbCon({ extraescolar: ["3-A", "12-BER", "7-X"] });
+    expect(await generarIdExtraescolar("Club de Ajedrez", db)).toBe("13-CDA");
   });
 });
 
 describe("generarIdCarrera", () => {
-  beforeEach(() => vi.clearAllMocks());
-
   it("usa 1 como consecutivo cuando no hay carreras previas", async () => {
-    vi.mocked(prisma.carrera.findMany).mockResolvedValue([]);
-    expect(await generarIdCarrera("Ingenieria Industrial")).toBe("1-II");
+    expect(await generarIdCarrera("Ingenieria Industrial", dbCon({}))).toBe("1-II");
   });
 
   it("continua desde el maximo prefijo numerico existente", async () => {
-    vi.mocked(prisma.carrera.findMany).mockResolvedValue([
-      { idcarrera: "5-CP" },
-      { idcarrera: "9-LA" },
-    ] as never);
-    expect(await generarIdCarrera("Ingenieria en Sistemas")).toBe("10-IES");
+    const db = dbCon({ carrera: ["5-CP", "9-LA"] });
+    expect(await generarIdCarrera("Ingenieria en Sistemas", db)).toBe("10-IES");
   });
 });
 
 describe("generarIdGrupo", () => {
-  beforeEach(() => vi.clearAllMocks());
-
   it("compone consecutivo + partes sin guiones, usando SINSEM si no hay semestre", async () => {
-    vi.mocked(prisma.grupo.count).mockResolvedValue(4);
-    const id = await generarIdGrupo({
-      idextraescolar: "1-FS",
-      rfcpromotor: "ZUHR111111000",
-      idsemestre: null,
-    });
+    const db = dbCon({ grupo: ["1-A", "2-B", "3-C", "4-D"] });
+    const id = await generarIdGrupo(
+      { idextraescolar: "1-FS", rfcpromotor: "ZUHR111111000", idsemestre: null },
+      db
+    );
     expect(id).toBe("5-1FS-ZUHR111111-SINSEM");
   });
 
   it("usa el idsemestre sin guiones cuando se proporciona", async () => {
-    vi.mocked(prisma.grupo.count).mockResolvedValue(0);
-    const id = await generarIdGrupo({
-      idextraescolar: "9-BDGYE",
-      rfcpromotor: "BEMM111111000",
-      idsemestre: "EJ-24",
-    });
+    const id = await generarIdGrupo(
+      { idextraescolar: "9-BDGYE", rfcpromotor: "BEMM111111000", idsemestre: "EJ-24" },
+      dbCon({})
+    );
     expect(id).toBe("1-9BDGYE-BEMM111111-EJ24");
+  });
+
+  it("tras borrar un grupo no repite un consecutivo existente (antes usaba el total + 1)", async () => {
+    // Quedan 2 grupos, pero el mayor consecutivo es 3: el siguiente debe ser 4, no 3.
+    const db = dbCon({ grupo: ["2-1FS-AAAA-EJ25", "3-1FS-AAAA-EJ25"] });
+    const id = await generarIdGrupo({ idextraescolar: "1-FS", rfcpromotor: "AAAA", idsemestre: "EJ-25" }, db);
+    expect(id).toBe("4-1FS-AAAA-EJ25");
   });
 });

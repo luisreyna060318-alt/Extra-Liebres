@@ -11,7 +11,10 @@ declare global {
 export const prisma =
   global.__prisma__ ??
   new PrismaClient({
-    log: env.nodeEnv === "development" ? ["warn", "error"] : ["error"],
+    // Fuera de desarrollo no se registran los errores de consulta: los
+    // esperados (p. ej. llave duplicada) se responden como 409 y los
+    // inesperados ya los registra el errorHandler con la ruta que los causo.
+    log: env.nodeEnv === "development" ? ["warn", "error"] : ["warn"],
   });
 
 if (env.nodeEnv !== "production") {
