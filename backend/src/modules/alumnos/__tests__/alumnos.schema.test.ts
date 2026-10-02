@@ -19,11 +19,11 @@ describe("createAlumnoSchema", () => {
     }
   });
 
-  it("convierte sexo='' (cadena vacia) a undefined en vez de rechazarlo", () => {
+  it("convierte sexo='' (cadena vacia) a null (sin especificar) en vez de rechazarlo", () => {
     const resultado = createAlumnoSchema.safeParse({ ...BASE, sexo: "" });
     expect(resultado.success).toBe(true);
     if (resultado.success) {
-      expect(resultado.data.sexo).toBeUndefined();
+      expect(resultado.data.sexo).toBeNull();
     }
   });
 
@@ -53,5 +53,19 @@ describe("updateAlumnoSchema", () => {
 
   it("acepta actualizar un unico campo", () => {
     expect(updateAlumnoSchema.safeParse({ nombre: "Nuevo Nombre" }).success).toBe(true);
+  });
+
+  it("distingue 'no tocar' (ausente) de 'vaciar' (null o '')", () => {
+    const resultado = updateAlumnoSchema.safeParse({ apmaterno: "", sexo: null });
+    expect(resultado.success).toBe(true);
+    if (resultado.success) {
+      expect(resultado.data).toEqual({ apmaterno: null, sexo: null });
+      expect("nombre" in resultado.data).toBe(false);
+    }
+  });
+
+  it("acepta numeros de control de hasta 11 digitos", () => {
+    expect(createAlumnoSchema.safeParse({ ...BASE, nocontrol: "12345678901" }).success).toBe(true);
+    expect(createAlumnoSchema.safeParse({ ...BASE, nocontrol: "123456789012" }).success).toBe(false);
   });
 });

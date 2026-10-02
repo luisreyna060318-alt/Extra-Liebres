@@ -9,7 +9,6 @@ import { queryClient } from "./lib/queryClient";
 import { ToastProvider } from "./lib/ToastContext";
 
 import "bootstrap/dist/css/bootstrap.min.css";
-import "bootstrap/dist/js/bootstrap.bundle.min.js";
 import "./styles/app.css";
 
 ReactDOM.createRoot(document.getElementById("root")!).render(

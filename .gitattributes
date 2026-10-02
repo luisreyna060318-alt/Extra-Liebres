@@ -1,0 +1,3 @@
+# Los scripts se ejecutan dentro de contenedores Linux: con fin de linea CRLF
+# (checkout en Windows) fallarian.
+*.sh text eol=lf

@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useId, useState } from "react";
 import { CreatePromotorInput, Promotor } from "../types";
 
 const ESTADO_INICIAL: CreatePromotorInput = {
@@ -23,11 +23,21 @@ export function PromotorForm({
   onCancelar,
   enviando,
 }: PromotorFormProps) {
+  const id = useId();
   const [form, setForm] = useState<CreatePromotorInput>(ESTADO_INICIAL);
   const editando = Boolean(promotorEnEdicion);
 
   useEffect(() => {
-    setForm(promotorEnEdicion ?? ESTADO_INICIAL);
+    setForm(
+      promotorEnEdicion
+        ? {
+            rfc: promotorEnEdicion.rfc,
+            nombre: promotorEnEdicion.nombre,
+            appaterno: promotorEnEdicion.appaterno,
+            apmaterno: promotorEnEdicion.apmaterno,
+          }
+        : ESTADO_INICIAL
+    );
   }, [promotorEnEdicion]);
 
   function handleSubmit(e: FormEvent) {
@@ -44,8 +54,11 @@ export function PromotorForm({
       <h2 className="h5 label-subrayado">{editando ? "Editar promotor" : "Registrar promotor"}</h2>
       <div className="row g-3">
         <div className="col-md-3">
-          <label className="form-label">RFC</label>
+          <label className="form-label" htmlFor={`${id}-rfc`}>
+            RFC
+          </label>
           <input
+            id={`${id}-rfc`}
             className="form-control text-uppercase"
             required
             maxLength={13}
@@ -55,8 +68,11 @@ export function PromotorForm({
           />
         </div>
         <div className="col-md-3">
-          <label className="form-label">Nombre</label>
+          <label className="form-label" htmlFor={`${id}-nombre`}>
+            Nombre
+          </label>
           <input
+            id={`${id}-nombre`}
             className="form-control"
             required
             maxLength={50}
@@ -65,8 +81,11 @@ export function PromotorForm({
           />
         </div>
         <div className="col-md-3">
-          <label className="form-label">Apellido paterno</label>
+          <label className="form-label" htmlFor={`${id}-appaterno`}>
+            Apellido paterno
+          </label>
           <input
+            id={`${id}-appaterno`}
             className="form-control"
             required
             maxLength={50}
@@ -75,8 +94,11 @@ export function PromotorForm({
           />
         </div>
         <div className="col-md-3">
-          <label className="form-label">Apellido materno</label>
+          <label className="form-label" htmlFor={`${id}-apmaterno`}>
+            Apellido materno
+          </label>
           <input
+            id={`${id}-apmaterno`}
             className="form-control"
             required
             maxLength={50}

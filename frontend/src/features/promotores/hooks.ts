@@ -1,13 +1,13 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { CLAVES, invalidar } from "../../lib/queryClient";
 import * as promotoresApi from "./api";
 import { CreatePromotorInput, UpdatePromotorInput } from "./types";
 
-const PROMOTORES_KEY = "promotores";
-
 export function usePromotores(search: string, page = 1, pageSize = 20) {
   return useQuery({
-    queryKey: [PROMOTORES_KEY, search, page, pageSize],
+    queryKey: [CLAVES.promotores, search, page, pageSize],
     queryFn: () => promotoresApi.fetchPromotores(search, page, pageSize),
+    placeholderData: keepPreviousData,
   });
 }
 
@@ -15,7 +15,7 @@ export function useCreatePromotor() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (input: CreatePromotorInput) => promotoresApi.createPromotor(input),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: [PROMOTORES_KEY] }),
+    onSuccess: () => invalidar(queryClient, CLAVES.promotores),
   });
 }
 
@@ -24,7 +24,8 @@ export function useUpdatePromotor() {
   return useMutation({
     mutationFn: ({ rfc, input }: { rfc: string; input: UpdatePromotorInput }) =>
       promotoresApi.updatePromotor(rfc, input),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: [PROMOTORES_KEY] }),
+    // El nombre del promotor se muestra en grupos e historiales.
+    onSuccess: () => invalidar(queryClient, CLAVES.promotores, CLAVES.grupos, CLAVES.historial),
   });
 }
 
@@ -33,6 +34,8 @@ export function useDeletePromotor() {
   return useMutation({
     mutationFn: ({ rfc, confirmar }: { rfc: string; confirmar: boolean }) =>
       promotoresApi.deletePromotor(rfc, confirmar),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: [PROMOTORES_KEY] }),
+    // Borra en cascada sus grupos e inscripciones.
+    onSuccess: () =>
+      invalidar(queryClient, CLAVES.promotores, CLAVES.grupos, CLAVES.roster, CLAVES.historial),
   });
 }

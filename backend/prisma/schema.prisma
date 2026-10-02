@@ -2,14 +2,23 @@
 // Migrado desde el esquema MySQL implicito del sistema PHP legado hacia PostgreSQL.
 
 generator client {
-  provider      = "prisma-client-js"
-  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+  provider        = "prisma-client-js"
+  binaryTargets   = ["native", "linux-musl-openssl-3.0.x"]
+  previewFeatures = ["postgresqlExtensions"]
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  // pg_trgm: indices de texto para las busquedas "contains"/ILIKE.
+  extensions = [pg_trgm]
 }
+
+// NOTA: el CHECK "calificacion_en_rango" de alumnosgrupo (0-4) existe en la
+// migracion inicial pero Prisma no puede expresarlo aqui. No se pierde al
+// generar migraciones nuevas, pero si alguna vez se regeneran las
+// migraciones desde cero hay que volver a agregarlo a mano (hay una prueba de
+// integracion que verifica que exista).
 
 enum Sexo {
   MASCULINO
@@ -32,20 +41,23 @@ enum DiaSemana {
 
 /// Alumno inscrito en el instituto, sujeto de inscripcion a grupos extraescolares.
 model Alumno {
-  nocontrol  String   @id @db.VarChar(11)
-  nombre     String   @db.VarChar(50)
-  appaterno  String   @db.VarChar(50)
-  apmaterno  String?  @db.VarChar(50)
-  sexo       Sexo?
-  idcarrera  String
-  campus     Campus
-  creadoEn   DateTime @default(now()) @map("creado_en")
+  nocontrol     String   @id @db.VarChar(11)
+  nombre        String   @db.VarChar(50)
+  appaterno     String   @db.VarChar(50)
+  apmaterno     String?  @db.VarChar(50)
+  sexo          Sexo?
+  idcarrera     String
+  campus        Campus
+  creadoEn      DateTime @default(now()) @map("creado_en")
   actualizadoEn DateTime @updatedAt @map("actualizado_en")
 
   carrera       Carrera       @relation(fields: [idcarrera], references: [idcarrera], onDelete: Restrict)
   inscripciones AlumnoGrupo[]
 
   @@index([idcarrera])
+  @@index([nombre(ops: raw("gin_trgm_ops"))], type: Gin, map: "alumno_nombre_trgm_idx")
+  @@index([appaterno(ops: raw("gin_trgm_ops"))], type: Gin, map: "alumno_appaterno_trgm_idx")
+  @@index([apmaterno(ops: raw("gin_trgm_ops"))], type: Gin, map: "alumno_apmaterno_trgm_idx")
   @@map("alumno")
 }
 
@@ -62,15 +74,18 @@ model Carrera {
 
 /// Promotor / instructor a cargo de uno o mas grupos extraescolares.
 model Promotor {
-  rfc        String   @id @db.VarChar(13)
-  nombre     String   @db.VarChar(50)
-  appaterno  String   @db.VarChar(50)
-  apmaterno  String   @db.VarChar(50)
-  creadoEn   DateTime @default(now()) @map("creado_en")
+  rfc           String   @id @db.VarChar(13)
+  nombre        String   @db.VarChar(50)
+  appaterno     String   @db.VarChar(50)
+  apmaterno     String   @db.VarChar(50)
+  creadoEn      DateTime @default(now()) @map("creado_en")
   actualizadoEn DateTime @updatedAt @map("actualizado_en")
 
   grupos Grupo[]
 
+  @@index([nombre(ops: raw("gin_trgm_ops"))], type: Gin, map: "promotor_nombre_trgm_idx")
+  @@index([appaterno(ops: raw("gin_trgm_ops"))], type: Gin, map: "promotor_appaterno_trgm_idx")
+  @@index([apmaterno(ops: raw("gin_trgm_ops"))], type: Gin, map: "promotor_apmaterno_trgm_idx")
   @@map("promotor")
 }
 

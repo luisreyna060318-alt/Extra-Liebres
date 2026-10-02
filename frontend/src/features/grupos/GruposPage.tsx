@@ -1,16 +1,16 @@
 import { useState } from "react";
-import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
-import { LoadingSpinner } from "../../components/ui/LoadingSpinner";
+import { EstadoConsulta } from "../../components/ui/EstadoConsulta";
 import { Pagination } from "../../components/ui/Pagination";
-import { getApiErrorMessage, getImpactoConfirmacion } from "../../lib/apiClient";
-import { useToast } from "../../lib/ToastContext";
+import { getApiErrorMessage } from "../../lib/apiClient";
+import { useBorradoConConfirmacion } from "../../lib/useBorradoConConfirmacion";
 import { useDebouncedValue } from "../../lib/useDebouncedValue";
 import { useFormularioColapsable } from "../../lib/useFormularioColapsable";
+import { useToast } from "../../lib/useToast";
 import { GrupoForm } from "./components/GrupoForm";
 import { GruposFiltrosForm } from "./components/GruposFiltros";
 import { GruposTable } from "./components/GruposTable";
 import { useCreateGrupo, useDeleteGrupo, useGrupos, useUpdateGrupo } from "./hooks";
-import { CreateGrupoInput, Grupo, GruposFiltros } from "./types";
+import { CreateGrupoInput, Grupo, GruposFiltros, UpdateGrupoInput } from "./types";
 
 export function GruposPage() {
   const { showToast } = useToast();
@@ -19,15 +19,17 @@ export function GruposPage() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [grupoEnEdicion, setGrupoEnEdicion] = useState<Grupo | null>(null);
-  const [confirmacion, setConfirmacion] = useState<{ idgrupo: string; mensaje: string } | null>(
-    null
-  );
   const { abierto, formRef, abrirCreacion, cerrar } = useFormularioColapsable(grupoEnEdicion);
 
-  const { data: resultado, isLoading } = useGrupos({ ...filtrosDebounced, page, pageSize });
+  const consulta = useGrupos({ ...filtrosDebounced, page, pageSize });
+  const resultado = consulta.data;
   const crear = useCreateGrupo();
   const actualizar = useUpdateGrupo();
   const borrar = useDeleteGrupo();
+  const borrado = useBorradoConConfirmacion({
+    borrar: (idgrupo, confirmar) => borrar.mutateAsync({ idgrupo, confirmar }),
+    mensajeExito: "Grupo borrado correctamente.",
+  });
 
   function handleCrear(input: CreateGrupoInput) {
     crear.mutate(input, {
@@ -39,7 +41,7 @@ export function GruposPage() {
     });
   }
 
-  function handleActualizar(input: CreateGrupoInput) {
+  function handleActualizar(input: UpdateGrupoInput) {
     if (!grupoEnEdicion) return;
     actualizar.mutate(
       { idgrupo: grupoEnEdicion.idgrupo, input },
@@ -56,40 +58,6 @@ export function GruposPage() {
   function handleCancelar() {
     setGrupoEnEdicion(null);
     cerrar();
-  }
-
-  function handleBorrar(idgrupo: string) {
-    borrar.mutate(
-      { idgrupo, confirmar: false },
-      {
-        onSuccess: () => showToast("success", "Grupo borrado correctamente."),
-        onError: (error) => {
-          const impacto = getImpactoConfirmacion(error);
-          if (impacto) {
-            setConfirmacion({ idgrupo, mensaje: impacto.mensaje });
-            return;
-          }
-          showToast("danger", getApiErrorMessage(error));
-        },
-      }
-    );
-  }
-
-  function handleConfirmarBorrado() {
-    if (!confirmacion) return;
-    borrar.mutate(
-      { idgrupo: confirmacion.idgrupo, confirmar: true },
-      {
-        onSuccess: () => {
-          showToast("success", "Grupo borrado correctamente.");
-          setConfirmacion(null);
-        },
-        onError: (error) => {
-          showToast("danger", getApiErrorMessage(error));
-          setConfirmacion(null);
-        },
-      }
-    );
   }
 
   return (
@@ -133,37 +101,34 @@ export function GruposPage() {
         </button>
       )}
 
-      {isLoading || !resultado ? (
-        <LoadingSpinner />
-      ) : (
-        <>
-          <GruposTable
-            grupos={resultado.data}
-            idEnEdicion={grupoEnEdicion?.idgrupo}
-            onEditar={setGrupoEnEdicion}
-            onBorrar={handleBorrar}
-          />
-          <Pagination
-            page={resultado.page}
-            pageSize={resultado.pageSize}
-            total={resultado.total}
-            onPageChange={setPage}
-            onPageSizeChange={(nuevoTamano) => {
-              setPageSize(nuevoTamano);
-              setPage(1);
-            }}
-          />
-        </>
-      )}
+      <EstadoConsulta
+        cargando={consulta.isLoading || !resultado}
+        error={consulta.error}
+        onReintentar={() => void consulta.refetch()}
+      >
+        {resultado && (
+          <>
+            <GruposTable
+              grupos={resultado.data}
+              idEnEdicion={grupoEnEdicion?.idgrupo}
+              onEditar={setGrupoEnEdicion}
+              onBorrar={borrado.solicitarBorrado}
+            />
+            <Pagination
+              page={resultado.page}
+              pageSize={resultado.pageSize}
+              total={resultado.total}
+              onPageChange={setPage}
+              onPageSizeChange={(nuevoTamano) => {
+                setPageSize(nuevoTamano);
+                setPage(1);
+              }}
+            />
+          </>
+        )}
+      </EstadoConsulta>
 
-      {confirmacion && (
-        <ConfirmDialog
-          mensaje={confirmacion.mensaje}
-          enviando={borrar.isPending}
-          onConfirmar={handleConfirmarBorrado}
-          onCancelar={() => setConfirmacion(null)}
-        />
-      )}
+      {borrado.dialogo}
     </div>
   );
 }

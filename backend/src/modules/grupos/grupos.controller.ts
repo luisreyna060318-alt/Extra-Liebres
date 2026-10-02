@@ -1,24 +1,10 @@
 import { Request, Response } from "express";
 import { asyncHandler } from "../../utils/asyncHandler";
+import { FiltrosGrupos } from "./grupos.schema";
 import * as gruposService from "./grupos.service";
 
 export const listGrupos = asyncHandler(async (req: Request, res: Response) => {
-  const { search, extraescolar, promotor, anio, page, pageSize } = req.query as unknown as {
-    search?: string;
-    extraescolar?: string;
-    promotor?: string;
-    anio?: string;
-    page: number;
-    pageSize: number;
-  };
-  const resultado = await gruposService.searchGrupos({
-    search,
-    extraescolar,
-    promotor,
-    anio,
-    page,
-    pageSize,
-  });
+  const resultado = await gruposService.searchGrupos(req.query as unknown as FiltrosGrupos);
   res.json(resultado);
 });
 

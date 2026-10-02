@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useId, useRef } from "react";
 
 interface ConfirmDialogProps {
   mensaje: string;
@@ -10,9 +10,12 @@ interface ConfirmDialogProps {
 
 /**
  * Modal de confirmacion para acciones con efectos secundarios (borrados en
- * cascada, desvinculaciones). A diferencia de ConfirmButton (window.confirm
- * generico), este muestra el mensaje especifico que devuelve la API con el
- * impacto real de la operacion (cuantos registros se veran afectados).
+ * cascada, desvinculaciones). Muestra el mensaje especifico que devuelve la
+ * API con el impacto real de la operacion.
+ *
+ * Accesibilidad: al abrirse enfoca "Cancelar" (la opcion segura), mantiene
+ * el foco de Tab dentro del dialogo, cierra con Escape y al cerrarse devuelve
+ * el foco al elemento que lo abrio.
  */
 export function ConfirmDialog({
   mensaje,
@@ -21,10 +24,37 @@ export function ConfirmDialog({
   onConfirmar,
   onCancelar,
 }: ConfirmDialogProps) {
+  const idTitulo = useId();
+  const idMensaje = useId();
+  const dialogoRef = useRef<HTMLDivElement>(null);
+  const cancelarRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    const previo = document.activeElement as HTMLElement | null;
+    cancelarRef.current?.focus();
+    return () => previo?.focus?.();
+  }, []);
+
   useEffect(() => {
     function alPresionarTecla(e: KeyboardEvent) {
       if (e.key === "Escape" && !enviando) {
         onCancelar();
+        return;
+      }
+      if (e.key !== "Tab" || !dialogoRef.current) return;
+      const enfocables = Array.from(
+        dialogoRef.current.querySelectorAll<HTMLElement>("button:not([disabled])")
+      );
+      if (enfocables.length === 0) return;
+      const primero = enfocables[0];
+      const ultimo = enfocables[enfocables.length - 1];
+      const dentro = dialogoRef.current.contains(document.activeElement);
+      if (e.shiftKey && (document.activeElement === primero || !dentro)) {
+        e.preventDefault();
+        ultimo.focus();
+      } else if (!e.shiftKey && (document.activeElement === ultimo || !dentro)) {
+        e.preventDefault();
+        primero.focus();
       }
     }
     document.addEventListener("keydown", alPresionarTecla);
@@ -38,14 +68,18 @@ export function ConfirmDialog({
         tabIndex={-1}
         role="dialog"
         aria-modal="true"
+        aria-labelledby={idTitulo}
+        aria-describedby={idMensaje}
         onClick={(e) => {
           if (e.target === e.currentTarget && !enviando) onCancelar();
         }}
       >
-        <div className="modal-dialog">
+        <div className="modal-dialog" ref={dialogoRef}>
           <div className="modal-content">
             <div className="modal-header">
-              <h5 className="modal-title">{titulo}</h5>
+              <h2 className="modal-title h5" id={idTitulo}>
+                {titulo}
+              </h2>
               <button
                 type="button"
                 className="btn-close"
@@ -55,10 +89,13 @@ export function ConfirmDialog({
               />
             </div>
             <div className="modal-body">
-              <p className="mb-0">{mensaje}</p>
+              <p className="mb-0" id={idMensaje}>
+                {mensaje}
+              </p>
             </div>
             <div className="modal-footer">
               <button
+                ref={cancelarRef}
                 type="button"
                 className="btn btn-outline-secondary"
                 onClick={onCancelar}
@@ -72,7 +109,7 @@ export function ConfirmDialog({
                 onClick={onConfirmar}
                 disabled={enviando}
               >
-                Si, continuar
+                {enviando ? "Procesando..." : "Si, continuar"}
               </button>
             </div>
           </div>

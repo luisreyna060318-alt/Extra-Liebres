@@ -13,3 +13,6 @@ pgdata/
 
 # Respaldo del sistema original con datos personales reales de alumnos: no se versiona.
 backend/prisma/legacy/extraliebresdb.sql
+
+# Respaldos de la base (datos personales): nunca se versionan.
+/respaldos/

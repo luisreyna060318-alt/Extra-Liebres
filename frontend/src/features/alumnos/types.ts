@@ -18,8 +18,10 @@ export interface CreateAlumnoInput {
   nocontrol: string;
   nombre: string;
   appaterno: string;
-  apmaterno?: string;
-  sexo?: Sexo;
+  /** null = sin apellido materno. */
+  apmaterno?: string | null;
+  /** null = sin especificar. */
+  sexo?: Sexo | null;
   idcarrera: string;
   campus: Campus;
 }

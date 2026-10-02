@@ -1,6 +1,8 @@
-import { useState } from "react";
+import axios from "axios";
+import { useId, useState } from "react";
 import AsyncSelect from "react-select/async";
 import { LoadingSpinner } from "../../components/ui/LoadingSpinner";
+import { getApiErrorMessage } from "../../lib/apiClient";
 import { fetchAlumnos } from "../alumnos/api";
 import { useHistorialAlumno } from "./hooks";
 
@@ -10,8 +12,10 @@ interface OpcionAlumno {
 }
 
 export function BusquedaAlumnoPage() {
+  const id = useId();
   const [nocontrol, setNocontrol] = useState<string | undefined>(undefined);
-  const { data, isLoading, isError } = useHistorialAlumno(nocontrol);
+  const { data, isLoading, error } = useHistorialAlumno(nocontrol);
+  const noExiste = axios.isAxiosError(error) && error.response?.status === 404;
 
   async function cargarAlumnos(term: string): Promise<OpcionAlumno[]> {
     const resultado = await fetchAlumnos({ search: term }, 1, 20);
@@ -26,20 +30,30 @@ export function BusquedaAlumnoPage() {
       <h1 className="page-title">Extraescolares cursados por un alumno</h1>
 
       <div className="mb-3" style={{ maxWidth: 420 }}>
-        <label className="form-label">Alumno</label>
+        <label className="form-label" htmlFor={id}>
+          Alumno
+        </label>
         <AsyncSelect<OpcionAlumno>
+          inputId={id}
           cacheOptions
           defaultOptions
           isClearable
           loadOptions={cargarAlumnos}
           placeholder="Buscar por numero de control o nombre..."
           noOptionsMessage={() => "Sin resultados."}
+          loadingMessage={() => "Buscando..."}
           onChange={(opcion) => setNocontrol(opcion?.value)}
         />
       </div>
 
       {isLoading && <LoadingSpinner />}
-      {isError && <p className="text-danger">No se encontro un alumno con ese numero de control.</p>}
+      {error && (
+        <div className="alert alert-danger" role="alert">
+          {noExiste
+            ? "No se encontro un alumno con ese numero de control."
+            : `No se pudo consultar el historial: ${getApiErrorMessage(error)}`}
+        </div>
+      )}
 
       {data && (
         <>

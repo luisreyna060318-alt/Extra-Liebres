@@ -6,9 +6,10 @@
   "type": "commonjs",
   "scripts": {
     "dev": "tsx watch src/server.ts",
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.build.json",
     "start": "node dist/server.js",
-    "lint": "eslint \"src/**/*.ts\"",
+    "typecheck": "tsc -p tsconfig.json",
+    "lint": "eslint \"src/**/*.ts\" \"prisma/**/*.ts\"",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:deploy": "prisma migrate deploy",
@@ -16,7 +17,8 @@
     "prisma:seed": "tsx prisma/seed.ts",
     "prisma:import-legacy": "tsx prisma/import-legacy.ts",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
@@ -37,11 +39,12 @@
     "@types/express": "^4.17.21",
     "@types/morgan": "^1.9.9",
     "@types/node": "^20.16.5",
+    "@types/supertest": "^6.0.2",
     "@typescript-eslint/eslint-plugin": "^8.5.0",
     "@typescript-eslint/parser": "^8.5.0",
+    "@vitest/coverage-v8": "^2.1.9",
     "eslint": "^8.57.0",
     "supertest": "^7.0.0",
-    "@types/supertest": "^6.0.2",
     "typescript": "^5.6.2",
     "vitest": "^2.1.9"
   },

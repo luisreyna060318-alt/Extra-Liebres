@@ -1,28 +1,62 @@
+# Variables: copia ".env.example" (en esta misma carpeta) a ".env" y ajusta
+# los valores. Docker Compose lee ese archivo automaticamente.
+#
+# IMPORTANTE: la aplicacion no tiene autenticacion. Por eso todos los puertos
+# se publican solo en 127.0.0.1 (esta maquina). Exponer el frontend a la red
+# (FRONTEND_IP=0.0.0.0) da acceso completo a los datos de los alumnos a
+# cualquiera que alcance este equipo.
+
 services:
   db:
     image: postgres:16-alpine
     container_name: extraliebres-db
     restart: unless-stopped
     environment:
-      POSTGRES_USER: extraliebres
-      POSTGRES_PASSWORD: extraliebres
-      POSTGRES_DB: extraliebresdb
+      POSTGRES_USER: ${POSTGRES_USER:-extraliebres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Define POSTGRES_PASSWORD en el archivo .env de la raiz (ver .env.example)}
+      POSTGRES_DB: ${POSTGRES_DB:-extraliebresdb}
+    # Solo para esta maquina: lo usan las pruebas, prisma studio y la
+    # importacion de datos desde el host. El backend usa la red interna.
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U extraliebres -d extraliebresdb"]
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 5s
       timeout: 5s
       retries: 10
 
+  # Respaldo automatico con pg_dump: uno al arrancar y luego cada
+  # RESPALDO_INTERVALO_HORAS. Los archivos quedan en ./respaldos (contienen
+  # datos personales: no se versionan y deben guardarse cifrados fuera del equipo).
+  respaldos:
+    image: postgres:16-alpine
+    container_name: extraliebres-respaldos
+    restart: unless-stopped
+    entrypoint: ["sh", "/scripts/ciclo.sh"]
+    environment:
+      PGHOST: db
+      PGUSER: ${POSTGRES_USER:-extraliebres}
+      PGPASSWORD: ${POSTGRES_PASSWORD:?Define POSTGRES_PASSWORD en el archivo .env de la raiz (ver .env.example)}
+      PGDATABASE: ${POSTGRES_DB:-extraliebresdb}
+      RETENCION_DIAS: ${RESPALDO_RETENCION_DIAS:-14}
+      INTERVALO_HORAS: ${RESPALDO_INTERVALO_HORAS:-24}
+    volumes:
+      - ./respaldos:/respaldos
+      - ./scripts/respaldos:/scripts:ro
+    depends_on:
+      db:
+        condition: service_healthy
+
+  # Solo para desarrollo: "docker compose --profile dev up -d adminer".
   adminer:
-    image: adminer:latest
+    image: adminer:4.8.1
     container_name: extraliebres-adminer
     restart: unless-stopped
+    profiles: ["dev"]
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"
     depends_on:
       - db
 
@@ -31,14 +65,22 @@ services:
       context: ./backend
     container_name: extraliebres-api
     restart: unless-stopped
-    env_file:
-      - ./backend/.env
     environment:
-      DATABASE_URL: postgresql://extraliebres:extraliebres@db:5432/extraliebresdb?schema=public
+      DATABASE_URL: postgresql://${POSTGRES_USER:-extraliebres}:${POSTGRES_PASSWORD:?Define POSTGRES_PASSWORD en el archivo .env de la raiz (ver .env.example)}@db:5432/${POSTGRES_DB:-extraliebresdb}?schema=public
       PORT: 4000
-      CORS_ORIGIN: http://localhost:5173
+      NODE_ENV: production
+      # nginx (frontend) es el unico proxy delante de la API.
+      TRUST_PROXY: "1"
+    # Publicado solo en esta maquina para depurar con curl/Postman; el
+    # navegador llega a la API a traves de nginx en /api.
     ports:
-      - "4000:4000"
+      - "127.0.0.1:4000:4000"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:4000/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
     depends_on:
       db:
         condition: service_healthy
@@ -46,14 +88,18 @@ services:
   frontend:
     build:
       context: ./frontend
-      args:
-        VITE_API_URL: http://localhost:4000/api
     container_name: extraliebres-web
     restart: unless-stopped
     ports:
-      - "5173:80"
+      - "${FRONTEND_IP:-127.0.0.1}:${FRONTEND_PORT:-5173}:80"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
 
 volumes:
   pgdata:

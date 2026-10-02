@@ -1,4 +1,4 @@
-import { apiClient } from "../../lib/apiClient";
+import { apiClient, seg } from "../../lib/apiClient";
 import { PaginatedResponse } from "../../types/pagination";
 import { Carrera, CreateCarreraInput, UpdateCarreraInput } from "./types";
 
@@ -13,11 +13,6 @@ export async function fetchCarreras(
   return data;
 }
 
-export async function fetchCarrera(idcarrera: string): Promise<Carrera> {
-  const { data } = await apiClient.get<Carrera>(`/carreras/${idcarrera}`);
-  return data;
-}
-
 export async function createCarrera(input: CreateCarreraInput): Promise<Carrera> {
   const { data } = await apiClient.post<Carrera>("/carreras", input);
   return data;
@@ -27,10 +22,10 @@ export async function updateCarrera(
   idcarrera: string,
   input: UpdateCarreraInput
 ): Promise<Carrera> {
-  const { data } = await apiClient.put<Carrera>(`/carreras/${idcarrera}`, input);
+  const { data } = await apiClient.put<Carrera>(`/carreras/${seg(idcarrera)}`, input);
   return data;
 }
 
 export async function deleteCarrera(idcarrera: string): Promise<void> {
-  await apiClient.delete(`/carreras/${idcarrera}`);
+  await apiClient.delete(`/carreras/${seg(idcarrera)}`);
 }

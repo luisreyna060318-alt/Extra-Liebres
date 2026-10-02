@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useId, useState } from "react";
 import { Carrera } from "../types";
 
 interface CarreraFormProps {
@@ -16,6 +16,7 @@ export function CarreraForm({
   onCancelar,
   enviando,
 }: CarreraFormProps) {
+  const id = useId();
   const [nombre, setNombre] = useState("");
   const editando = Boolean(carreraEnEdicion);
 
@@ -39,8 +40,11 @@ export function CarreraForm({
       </h2>
       <div className="row g-3">
         <div className="col-md-6">
-          <label className="form-label">Nombre de la carrera</label>
+          <label className="form-label" htmlFor={`${id}-nombre`}>
+            Nombre de la carrera
+          </label>
           <input
+            id={`${id}-nombre`}
             className="form-control"
             required
             maxLength={120}

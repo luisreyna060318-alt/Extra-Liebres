@@ -1,395 +1,343 @@
-# Sistema de Actividades Extraescolares - ITCJ
+# Sistema de Actividades Extraescolares — ITCJ
 
-Reescritura completa del sistema original (PHP multipagina + MySQL) como una
-**SPA en React** que consume una **API REST en Node.js/Express/TypeScript**,
-respaldada por **PostgreSQL**. El codigo PHP original se conserva sin cambios
-en [`legacy-php/`](legacy-php) unicamente como referencia historica; ya no se
-usa en produccion.
+Sistema para administrar las actividades extraescolares del Instituto
+Tecnológico de Ciudad Juárez: catálogos (carreras, promotores, semestres,
+actividades), grupos, alumnos, inscripción de alumnos a grupos con su
+calificación y consultas (historial de un alumno, roster de un grupo).
 
-## Arquitectura
+Es la reescritura del sistema original en PHP multipágina + MySQL como una
+**SPA en React** que consume una **API REST en Node.js/Express/TypeScript**
+respaldada por **PostgreSQL**.
+
+> **Importante: la aplicación no tiene autenticación** (decisión de alcance:
+> "sin autenticación por ahora"). Cualquiera que llegue a la aplicación puede
+> ver, exportar, modificar y borrar los datos de los alumnos. Por eso Docker
+> Compose publica todo **solo en `127.0.0.1`** (esta máquina). No la expongas
+> a una red sin antes agregar autenticación y HTTPS (ver
+> [Seguridad y despliegue](#seguridad-y-despliegue)).
+
+## Contenido del repositorio
 
 ```
 extra-liebres/
-├── backend/            API REST (Node.js + Express + TypeScript + Prisma)
-├── frontend/           SPA (React + TypeScript + Vite)
-├── legacy-php/         Sistema original en PHP (solo referencia, no usar)
-└── docker-compose.yml  PostgreSQL + Adminer + backend + frontend
+├── backend/             API REST (Express + TypeScript + Prisma)
+│   ├── prisma/          esquema, migraciones, seed sintético e importación del sistema anterior
+│   └── src/             módulos por dominio (routes → controller → service → Prisma)
+├── frontend/            SPA (React + TypeScript + Vite) y configuración de nginx
+├── scripts/respaldos/   respaldo y restauración de la base (los usa el servicio "respaldos")
+├── docs/                historial de desarrollo
+├── .github/workflows/   integración continua
+├── docker-compose.yml   PostgreSQL + API + frontend (nginx) + respaldos (+ Adminer opcional)
+└── .env.example         variables de Docker Compose
 ```
 
-### Backend (`backend/`)
+## Puesta en marcha con Docker (recomendada)
 
-- **Express + TypeScript**, organizado por modulos de dominio (arquitectura
-  "feature-first"): `alumnos`, `carreras`, `promotores`, `semestres`,
-  `extraescolares`, `grupos`, `alumnosGrupo` (inscripciones) y `busqueda`
-  (reportes).
-- Cada modulo sigue el patron `routes -> controller -> service -> Prisma`,
-  con validacion de entrada con **Zod** y manejo de errores centralizado.
-- **Prisma ORM** sobre PostgreSQL (`prisma/schema.prisma`), con migraciones
-  versionadas.
-- La logica de negocio original se preservo intencionalmente:
-  - Generacion automatica de IDs (`idextraescolar`, `idsemestre`, `idgrupo`,
-    `idcarrera`) con el mismo formato del sistema legado (ver
-    `src/utils/idGenerators.ts`).
-  - Reglas de validacion (dias/horarios de grupo, pares mes-inicio/mes-termino
-    de semestre, escala de calificacion 0-4 -> desempeno).
-  - Semestres solo admiten alta y baja (no edicion), igual que el original.
-- **Paginacion real** en todos los listados (`GET /alumnos`, `/promotores`,
-  `/semestres`, `/extraescolares`, `/grupos`, `/carreras`): aceptan
-  `?page=&pageSize=` y devuelven `{ data, total, page, pageSize }` en vez de
-  un arreglo plano. Necesario porque el sistema real tiene 1804 alumnos —
-  antes solo se podian ver los primeros 15/100 sin forma de saber cuantos
-  habia en total.
-- **Borrado con advertencia explicita**: los endpoints `DELETE` cuyo borrado
-  tiene efectos secundarios (cascada hacia `grupo`/`alumnosgrupo`, o
-  desvinculacion de `grupo.idsemestre`) aceptan `?confirmar=true`. Sin ese
-  parametro, si hay registros afectados, responden `409` con el detalle
-  exacto del impacto (`{ error, details: { requiereConfirmacion, ... } }`)
-  en vez de borrar en silencio. Ver `src/utils/confirmarBorrado.ts` y la
-  seccion "Politica de borrado" mas abajo.
-- **Sin condicion de carrera al generar IDs**: `generarIdExtraescolar`,
-  `generarIdCarrera` y `generarIdGrupo` calculan el siguiente numero leyendo
-  la tabla (no hay secuencia de Postgres de por medio), asi que dos altas
-  simultaneas pueden calcular el mismo candidato. `src/utils/retry.ts`
-  reintenta automaticamente la operacion completa (recalcular ID + insertar)
-  cuando la insercion choca contra la restriccion UNIQUE (error `P2002`),
-  de forma transparente para quien hizo la solicitud. Verificado con una
-  prueba de integracion que dispara 5 altas concurrentes reales.
-- **`GET /api/health` verifica la base de datos** (`SELECT 1` via Prisma) y
-  responde `503` si Postgres no responde, en vez de solo confirmar que el
-  proceso de Express sigue vivo.
-- **Filtros combinados y exportacion CSV en Alumnos**: `GET /api/alumnos`
-  acepta `idcarrera`, `campus` y `sexo` ademas de `search` (todos
-  combinables); `GET /api/alumnos/export` devuelve los mismos resultados
-  (sin paginar, hasta 10,000 filas) como CSV con BOM UTF-8 para que Excel
-  muestre bien los acentos.
+Requisitos: Docker Desktop (o Docker Engine + Compose v2).
 
-### Frontend (`frontend/`)
+1. **Variables.** Copia el archivo de ejemplo y cambia la contraseña:
 
-- **React 18 + TypeScript + Vite**, enrutado con **React Router**.
-- Organizado tambien por caracteristica (`src/features/<entidad>`), cada una
-  con su propio `api.ts` (llamadas HTTP), `hooks.ts` (React Query) y
-  componentes de UI.
-- **TanStack Query** para cache/sincronizacion de datos del servidor.
-- **Bootstrap 5** para mantener una apariencia consistente con el sistema
-  original, y **react-select** (`AsyncSelect`) como reemplazo moderno de
-  Select2 para los combos con busqueda remota (extraescolar, promotor,
-  semestre, grupo).
-- Rutas: `/`, `/alumnos`, `/carreras`, `/promotores`, `/semestres`,
-  `/extraescolares`, `/grupos`, `/busqueda`, `/busqueda/alumno`,
-  `/busqueda/grupo`, `/gestionar-alumnos-grupo` (`/carreras` es nueva; el
-  resto mapea 1:1 desde la navegacion original).
-- Paginacion visible en las 5 tablas principales (`components/ui/Pagination`)
-  y un modal de confirmacion (`components/ui/ConfirmDialog`) que reemplaza
-  `window.confirm()` para los borrados con efectos secundarios, mostrando el
-  mensaje de impacto real que calcula el backend antes de continuar.
-- **Notificaciones flotantes (toasts)** en vez de un `<Alert>` fijo arriba de
-  cada pagina: `lib/ToastContext.tsx` expone `useToast().showToast(tipo,
-  mensaje)`, y `components/ui/ToastStack.tsx` las dibuja fijas arriba a la
-  derecha con autodesvanecido (5s). Las 6 paginas con alta/edicion/borrado
-  la usan de forma consistente.
-- **Alumnos**: filtros combinados (carrera, campus, sexo, ademas del texto
-  libre) y un boton "Exportar CSV" que abre `/api/alumnos/export` con los
-  mismos filtros activos (descarga nativa del navegador, sin JS adicional).
+   ```bash
+   cp .env.example .env            # PowerShell: Copy-Item .env.example .env
+   ```
 
-### Base de datos
+   Usa una contraseña de letras, números, `-` y `_` (va dentro de la URL de
+   conexión). **Si ya tenías el volumen `pgdata`** de una versión anterior, la
+   contraseña real es con la que se creó (antes era `extraliebres`): pon esa
+   en `.env` o cámbiala dentro de la base con
+   `ALTER USER extraliebres WITH PASSWORD '...';`.
 
-El esquema (`backend/prisma/schema.prisma`) se tradujo a PostgreSQL a partir
-del volcado MySQL/phpMyAdmin real del sistema original
-(`backend/prisma/legacy/extraliebresdb.sql`):
+2. **Levantar.**
 
-- `alumno`, `carrera`, `promotor`, `semestre`, `extraescolar`, `grupo`,
-  `alumnosgrupo` (tabla de enlace alumno-grupo con calificacion/desempeno).
-  `carrera` es una tabla nueva que no existia en el sistema original (ahi
-  `alumno.carrera` era texto libre); se agrego para evitar inconsistencias
-  de captura ("Ing. Industrial" vs "ING. INDUSTRIAL") y poder dar de
-  alta/baja carreras sin tocar codigo. `alumno.idcarrera` es ahora una FK.
-- Enumeraciones nativas de Postgres para `sexo`, `campus` y los dias de la
-  semana. `sexo` es opcional (`Sexo?`) porque en los datos reales hay alumnos
-  con ese campo en blanco.
-- `nocontrol` se guarda como texto (no como entero) para ser consistente con
-  el resto de las llaves de negocio del sistema (`rfc`, `idextraescolar`,
-  `idsemestre`, `idgrupo`, `idcarrera`), todas string; el valor numerico
-  original se conserva sin cambios, solo cambia el tipo de columna.
-- Llaves foraneas explicitas `grupo -> semestre/extraescolar/promotor`,
-  `alumno -> carrera` y `alumnosgrupo -> alumno/grupo` (antes solo se
-  validaban en PHP).
-- **`CHECK` constraint** en `alumnosgrupo.calificacion` (0-4) directamente en
-  Postgres, ademas de la validacion en Zod — protege contra cualquier
-  escritura que no pase por la API (script, correccion manual).
-- **Indices trigram (`pg_trgm`)** en `alumno`/`promotor` (`nombre`,
-  `appaterno`, `apmaterno`) para que las busquedas `ILIKE`/`contains` de los
-  listados no dependan de un *sequential scan* conforme crece la tabla.
+   ```bash
+   docker compose up -d --build
+   ```
 
-### Politica de borrado
+   Esto levanta PostgreSQL, la API (aplica sola las migraciones pendientes al
+   arrancar), el frontend en <http://localhost:5173> y el servicio de
+   respaldos. El navegador solo habla con nginx; nginx reenvía `/api` a la API.
 
-No todos los borrados se comportan igual, segun que tan reversible/grave es
-el efecto secundario:
+3. **Datos.** La base empieza vacía. Para tener datos:
+   - reales: ver [Carga de datos del sistema anterior](#carga-de-datos-del-sistema-anterior);
+   - de ejemplo (ficticios): `docker compose exec backend npm run prisma:seed`
+     (se niega a correr si la base ya tiene alumnos reales).
 
-| Entidad | Si tiene dependientes... | Se puede forzar? |
-| --- | --- | --- |
-| `grupo` | Borra en cascada sus `alumnosgrupo` (calificaciones) | Si, con `?confirmar=true` |
-| `alumno` | Borra en cascada su historial en `alumnosgrupo` | Si, con `?confirmar=true` |
-| `promotor` | Borra en cascada sus `grupo` (y las inscripciones de esos grupos) | Si, con `?confirmar=true` |
-| `extraescolar` | Igual que `promotor` | Si, con `?confirmar=true` |
-| `semestre` | Desvincula (`SET NULL`) sus `grupo.idsemestre`, no borra nada | Si, con `?confirmar=true` |
-| `carrera` | **Se bloquea siempre** si tiene alumnos asignados | **No** — no existe bypass |
+Opcional:
 
-La diferencia con `carrera` es deliberada: cascadear hacia `grupo` o
-`alumnosgrupo` borra registros operativos/de inscripcion, pero cascadear
-desde `carrera` implicaria borrar **alumnos** (personas), asi que ahi se
-prefiere bloquear sin excepcion y pedir reasignar el alumno primero.
-
-El flujo completo (`DELETE` sin confirmar -> `409` con el detalle -> el
-usuario ve el mensaje real en un modal -> `DELETE` de nuevo con
-`?confirmar=true`) esta implementado una sola vez en
-`frontend/src/lib/apiClient.ts` (`getImpactoConfirmacion`) +
-`frontend/src/components/ui/ConfirmDialog.tsx`, y cada pagina lo reutiliza.
-
-### Carga de datos reales (`extraliebresdb.sql`)
-
-`backend/prisma/import-legacy.ts` parsea directamente el dump SQL original
-(sin necesidad de MySQL) y carga su contenido en PostgreSQL via Prisma:
-
-```bash
-docker compose exec backend npm run prisma:import-legacy
-# o, sin Docker:
-cd backend && npm run prisma:import-legacy
-```
-
-Este script **borra el contenido actual de las 7 tablas** y las vuelve a
-llenar desde `prisma/legacy/extraliebresdb.sql`, por lo que es seguro
-correrlo mas de una vez (idempotente). Ademas de las 6 tablas originales,
-**deriva el catalogo `carrera`** a partir de los valores distintos de
-`alumno.carrera` en el dump (16 carreras reales, ya bien capturadas, sin
-typos) y liga cada alumno por `idcarrera` en vez de guardar el texto suelto.
-Tambien normaliza otras particularidades del dato legado: campos vacios
-(`''`) se guardan como `NULL`, `CAMPUS 1`/`CAMPUS 2` se mapean a
-`CAMPUS_1`/`CAMPUS_2`, y el dump divide la tabla `alumno` en varios `INSERT`
-(el parser los concatena todos). Con el archivo actual carga 1804 alumnos,
-16 carreras, 25 promotores, 46 actividades extraescolares, 34 grupos y 1
-semestre (la tabla `alumnosgrupo` viene vacia en el dump).
-
-`backend/prisma/seed.ts` sigue existiendo por separado como datos de
-ejemplo minimos para desarrollo (no se ejecuta junto con la carga real).
-
-### Autenticacion
-
-El sistema original no tenia ningun mecanismo de autenticacion (se confirmo
-que ninguna pagina PHP validaba sesion/usuario). Siguiendo lo acordado, esta
-version tampoco la incluye. **Antes de exponer esta aplicacion fuera de una
-red confiable, se recomienda agregar autenticacion** (por ejemplo JWT +
-bcrypt) ya que maneja datos de alumnos.
-
-## Requisitos previos
-
-- Node.js 18 o superior y npm
-- PostgreSQL 14+ (local) **o** Docker + Docker Compose
-
-## Puesta en marcha con Docker (recomendado)
-
-```bash
-docker compose up --build
-```
-
-Esto levanta PostgreSQL, Adminer (`http://localhost:8080`), la API
-(`http://localhost:4000`) y el frontend (`http://localhost:5173`). Antes del
-primer arranque, corre las migraciones y carga los datos reales del sistema
-original:
-
-```bash
-docker compose exec backend npm run prisma:deploy
-docker compose exec backend npm run prisma:import-legacy
-```
+- **Adminer** (explorador de la base, solo desarrollo):
+  `docker compose --profile dev up -d adminer` → <http://localhost:8080>,
+  servidor `db`.
+- **Abrir el frontend a otros equipos**: `FRONTEND_IP=0.0.0.0` en `.env`.
+  Hazlo solo dentro de una red controlada: no hay autenticación.
 
 ## Puesta en marcha manual (sin Docker)
 
+Requisitos: Node.js 22 LTS (o 20 en adelante), npm y PostgreSQL 14+.
+
 ### 1. Base de datos
 
-Crea una base PostgreSQL vacia, por ejemplo:
-
 ```sql
-CREATE DATABASE extraliebresdb;
 CREATE USER extraliebres WITH PASSWORD 'extraliebres';
-GRANT ALL PRIVILEGES ON DATABASE extraliebresdb TO extraliebres;
+-- La base debe pertenecer al usuario: en PostgreSQL 15+ un GRANT sobre la
+-- base no basta para crear tablas en el esquema public.
+CREATE DATABASE extraliebresdb OWNER extraliebres;
+CREATE DATABASE extraliebresdb_test OWNER extraliebres;  -- solo para las pruebas
 ```
 
 ### 2. Backend
 
 ```bash
 cd backend
-copy .env.example .env      # en PowerShell: Copy-Item .env.example .env
-# edita .env con tu cadena de conexion si es distinta
-npm install
-npm run prisma:migrate      # crea las tablas
-npm run prisma:import-legacy # carga los datos reales de extraliebresdb.sql
-npm run dev                 # API en http://localhost:4000
+cp .env.example .env         # PowerShell: Copy-Item .env.example .env
+npm ci
+npm run prisma:deploy        # crea las tablas (aplica las migraciones)
+npm run prisma:seed          # opcional: datos de ejemplo ficticios
+npm run dev                  # API en http://localhost:4000
 ```
+
+Usa `prisma:deploy` (no `prisma:migrate`) para instalar: `prisma:migrate`
+(`prisma migrate dev`) es para **crear** migraciones nuevas al cambiar el
+esquema.
 
 ### 3. Frontend
 
 ```bash
 cd frontend
-copy .env.example .env
-npm install
-npm run dev                 # SPA en http://localhost:5173
+npm ci
+npm run dev                  # SPA en http://localhost:5173
 ```
 
-## Scripts utiles
+En desarrollo Vite reenvía `/api` a `http://localhost:4000` (cámbialo con la
+variable `API_PROXY_TARGET`), así que no hace falta configurar la URL de la API.
 
-| Backend                    | Descripcion                              |
-| --------------------------- | ----------------------------------------- |
-| `npm run dev`                | Servidor con recarga en caliente         |
-| `npm run build` / `start`    | Compila a `dist/` y lo ejecuta            |
-| `npm run prisma:studio`      | Explorador visual de la base de datos     |
-| `npm run prisma:migrate`     | Crea/aplica una migracion en desarrollo   |
-| `npm run prisma:seed`        | Carga datos de ejemplo minimos            |
-| `npm run prisma:import-legacy` | Borra y recarga los datos reales desde `extraliebresdb.sql` |
-| `npm test`                   | Corre la suite de Vitest (unitarias + integracion, requiere `extraliebresdb_test`) |
-| `npm run test:watch`         | Igual, en modo watch                      |
+## Carga de datos del sistema anterior
 
-| Frontend            | Descripcion                    |
-| -------------------- | -------------------------------|
-| `npm run dev`         | Servidor de desarrollo Vite    |
-| `npm run build`       | Build de produccion en `dist/` |
-| `npm run preview`     | Sirve el build de produccion   |
+`backend/prisma/import-legacy.ts` lee el volcado de MySQL/phpMyAdmin
+(`backend/prisma/legacy/extraliebresdb.sql`, **no versionado** porque contiene
+datos personales reales) y lo carga en PostgreSQL:
 
-## Endpoints principales de la API
+- Primero lee y valida **todo** el volcado; si algo no cuadra, se detiene sin
+  tocar la base.
+- **Reemplaza** el contenido de las 7 tablas, incluidas las inscripciones y
+  calificaciones capturadas en la aplicación. Si la base ya tiene datos, se
+  niega a continuar y muestra lo que borraría, salvo que pases
+  `--confirmar-borrado`. Respalda antes.
+- Todo ocurre en **una sola transacción**: si falla, la base queda como estaba.
+- Deriva el catálogo de carreras de los valores de `alumno.carrera`. Los
+  alumnos sin carrera quedan en **"SIN CARRERA ASIGNADA (revisar)"**; campus,
+  sexo o días no reconocidos, grupos con referencias inválidas, inscripciones
+  fuera de rango y duplicados se **reportan** con su número de control o id
+  para revisarlos.
 
-Todos bajo el prefijo `/api`. Ver el codigo en `backend/src/modules/*` para
-el detalle de cada uno. Los `GET` de listado aceptan `?search=&page=&pageSize=`
-y devuelven `{ data, total, page, pageSize }`; los `DELETE` con efectos
-secundarios aceptan `?confirmar=true` (ver "Politica de borrado").
+Desde el equipo anfitrión (con Docker, la base está en `127.0.0.1:5432`; pon la
+contraseña de tu `.env` raíz en el `DATABASE_URL` de `backend/.env`):
+
+```bash
+cd backend
+npm run prisma:import-legacy                          # se detiene si ya hay datos
+npm run prisma:import-legacy -- --confirmar-borrado   # reemplaza los datos
+```
+
+O dentro de Docker, montando el volcado solo para esa ejecución (nunca se
+copia a la imagen):
+
+```bash
+docker compose run --rm -v "$(pwd)/backend/prisma/legacy:/app/prisma/legacy:ro" \
+  backend npx tsx prisma/import-legacy.ts --confirmar-borrado
+# PowerShell: -v "${PWD}\backend\prisma\legacy:/app/prisma/legacy:ro"
+```
+
+## Respaldos y restauración
+
+El servicio `respaldos` de Docker Compose hace un `pg_dump` al arrancar y luego
+cada `RESPALDO_INTERVALO_HORAS` (24 por defecto), y borra los de más de
+`RESPALDO_RETENCION_DIAS` (14). Los archivos quedan en `./respaldos/`, que git
+ignora porque **contienen datos personales**: cópialos con regularidad a otro
+lugar, cifrados.
+
+```bash
+# Respaldo inmediato
+docker compose exec respaldos sh /scripts/respaldar.sh
+
+# Restaurar (reemplaza todo el contenido de la base; antes crea un respaldo de seguridad)
+docker compose stop backend
+docker compose exec respaldos sh /scripts/restaurar.sh                      # lista los respaldos
+docker compose exec respaldos sh /scripts/restaurar.sh <archivo.dump> --confirmar
+docker compose start backend
+```
+
+Prueba la restauración de vez en cuando: un respaldo que nunca se restauró no
+está verificado.
+
+## Pruebas y verificación
+
+```bash
+cd backend
+DATABASE_URL="postgresql://extraliebres:extraliebres@localhost:5432/extraliebresdb_test?schema=public" \
+  npx prisma migrate deploy   # una vez, sobre la base de pruebas
+npm test                      # unitarias + integración (usa .env.test)
+npm run test:coverage
+npm run typecheck             # incluye prisma/ y la configuración de pruebas
+npm run lint
+
+cd ../frontend
+npm test                      # Vitest + Testing Library
+npm run lint
+npm run build
+```
+
+Las pruebas de integración **borran todas las tablas** de la base de prueba
+antes de cada caso. Para evitar accidentes, se cancelan si `DATABASE_URL` no
+apunta a una base cuyo nombre termine en `_test`.
+
+En GitHub, el flujo `.github/workflows/ci.yml` ejecuta todo lo anterior (con un
+PostgreSQL temporal) en cada pull request y en `main`, además de verificar que
+`schema.prisma` coincide con las migraciones y de un `npm audit` de las
+dependencias de producción.
+
+## Arquitectura
+
+### Backend (`backend/`)
+
+- **Express + TypeScript** organizado por módulos de dominio: `alumnos`,
+  `carreras`, `promotores`, `semestres`, `extraescolares`, `grupos`,
+  `alumnosGrupo` (inscripciones) y `busqueda` (reportes). Cada módulo sigue
+  `routes → controller → service → Prisma`, con validación de entrada con
+  **Zod** (body, params y query) y manejo de errores centralizado.
+- **IDs de negocio con el formato del sistema anterior**
+  (`src/utils/idGenerators.ts`): `idextraescolar` e `idcarrera` =
+  `{consecutivo}-{iniciales}`, `idsemestre` = `EJ-25`/`AD-25`, `idgrupo` =
+  `{consecutivo}-{actividad}-{rfc}-{semestre}`. El consecutivo es el mayor
+  existente + 1 y se calcula bajo un candado de PostgreSQL
+  (`pg_advisory_xact_lock`), así que dos altas simultáneas no lo repiten. Las
+  iniciales usan solo letras y dígitos y se limitan a 10.
+- **Paginación** en todos los listados (`?page=&pageSize=`, máximo 100) con
+  respuesta `{ data, total, page, pageSize }`.
+- **Búsqueda por palabras**: cada palabra de `search` debe aparecer en algún
+  campo, así que "Juan Pérez" encuentra a quien tenga "Juan" en el nombre y
+  "Pérez" en un apellido.
+- **Edición**: en los `PUT`, un campo ausente no se modifica y `null` (o `""`)
+  lo vacía. En grupos, las reglas de horario se validan sobre el resultado
+  final (lo guardado + lo enviado).
+- **Inscripciones** en lote (máximo 200 alumnos por operación) en una sola
+  transacción.
+- **Errores**: respuestas `{ error, details? }` sin metadatos internos; JSON
+  malformado → 400, cuerpo demasiado grande → 413.
+- **Exportación CSV** de alumnos con los mismos filtros del listado, BOM UTF-8
+  para Excel y neutralización de valores que Excel ejecutaría como fórmula.
+- `GET /api/health` consulta la base y responde `503` si no contesta.
+
+### Frontend (`frontend/`)
+
+- **React 18 + TypeScript + Vite**, React Router, **TanStack Query** para los
+  datos del servidor, **Bootstrap 5** (solo CSS) y **react-select** para los
+  combos con búsqueda remota.
+- Organizado por característica (`src/features/<entidad>`: `api.ts`,
+  `hooks.ts`, componentes). Piezas compartidas en `src/components/ui` y
+  `src/lib`: estado de consulta con error y reintento, flujo de borrado con
+  confirmación (`useBorradoConConfirmacion`), avisos (toasts), paginación y
+  diálogo de confirmación accesible.
+- En Docker lo sirve **nginx** (`frontend/nginx/`) con gzip, caché para los
+  archivos con hash, cabeceras de seguridad (CSP, `X-Frame-Options`, etc.) y
+  proxy de `/api` hacia la API.
+
+### Base de datos
+
+El esquema (`backend/prisma/schema.prisma`) se tradujo a PostgreSQL desde el
+volcado del sistema original:
+
+- Tablas `alumno`, `carrera`, `promotor`, `semestre`, `extraescolar`, `grupo` y
+  `alumnosgrupo` (inscripción alumno–grupo con calificación y desempeño).
+  `carrera` es un catálogo nuevo (antes `alumno.carrera` era texto libre).
+- Llaves foráneas explícitas, enums nativos (`sexo`, `campus`, días), `CHECK`
+  de `calificacion` entre 0 y 4 e índices trigram (`pg_trgm`) en nombres de
+  alumnos y promotores.
+- El `CHECK` vive solo en la migración porque Prisma no puede expresarlo; una
+  prueba de integración verifica que exista. Los índices trigram sí están
+  declarados en el esquema, así que `prisma migrate dev` ya no los elimina.
+
+### Política de borrado
+
+| Entidad | Si tiene dependientes... | ¿Se puede forzar? |
+| --- | --- | --- |
+| `grupo` | Borra en cascada sus inscripciones (calificaciones) | Sí, con `?confirmar=true` |
+| `alumno` | Borra en cascada su historial de inscripciones | Sí, con `?confirmar=true` |
+| `promotor` | Borra en cascada sus grupos y las inscripciones de esos grupos | Sí, con `?confirmar=true` |
+| `extraescolar` | Igual que `promotor` | Sí, con `?confirmar=true` |
+| `semestre` | Desvincula sus grupos (`SET NULL`), no borra nada | Sí, con `?confirmar=true` |
+| `carrera` | **Se bloquea siempre** si tiene alumnos | **No** |
+
+Sin `?confirmar=true`, un borrado con impacto responde `409` con el detalle
+(`{ error, details: { requiereConfirmacion: true, ... } }`); la interfaz lo
+muestra en un diálogo antes de repetir la petición confirmada. El conteo y el
+borrado ocurren en la misma transacción.
+
+Los borrados son físicos: no hay papelera ni bitácora. Los respaldos son la
+única forma de recuperar algo borrado por error.
+
+## Endpoints de la API
+
+Todos bajo `/api`. Los listados aceptan `?search=&page=&pageSize=`.
 
 - `GET/POST /alumnos`, `GET/PUT/DELETE /alumnos/:nocontrol` (filtros extra:
   `idcarrera`, `campus`, `sexo`)
-- `GET /alumnos/export` (CSV, mismos filtros, sin paginar)
-- `GET/POST /carreras`, `GET/PUT/DELETE /carreras/:idcarrera` (borrado
-  siempre bloqueado si hay alumnos asignados, sin `?confirmar=true`)
+- `GET /alumnos/export` (CSV con los mismos filtros, hasta 10,000 filas)
+- `GET/POST /carreras`, `GET/PUT/DELETE /carreras/:idcarrera`
 - `GET/POST /promotores`, `GET/PUT/DELETE /promotores/:rfc`
-- `GET/POST /semestres`, `GET/DELETE /semestres/:idsemestre` (sin edicion)
+- `GET/POST /semestres`, `GET/DELETE /semestres/:idsemestre` (sin edición,
+  igual que el sistema original)
 - `GET/POST /extraescolares`, `GET/PUT/DELETE /extraescolares/:idextraescolar`
-- `GET/POST /grupos`, `GET/PUT/DELETE /grupos/:idgrupo`
-- `GET/POST/DELETE /grupos/:idgrupo/alumnos` (roster, inscripcion masiva, baja masiva)
+- `GET/POST /grupos`, `GET/PUT/DELETE /grupos/:idgrupo` (filtros:
+  `idextraescolar`, `rfcpromotor`, `anio`)
+- `GET/POST/DELETE /grupos/:idgrupo/alumnos` (roster con estadísticas,
+  inscripción y baja en lote; el `DELETE` recibe `{ "nocontrol": [...] }`)
 - `GET /busqueda/alumnos/:nocontrol/extraescolares` (historial de un alumno)
-- `GET /health` (`{ status, database, timestamp }`, `503` si Postgres no responde)
+- `GET /health` (`{ status, database, timestamp }`, `503` si la base no responde)
 
-## Estado de verificacion
+## Scripts
 
-Este proyecto ya se compilo y se probo de punta a punta con `docker compose
-up --build` (backend, frontend, PostgreSQL y Adminer), incluyendo:
+| Backend | Descripción |
+| --- | --- |
+| `npm run dev` | API con recarga en caliente |
+| `npm run build` / `npm start` | Compila a `dist/` y lo ejecuta |
+| `npm run typecheck` / `npm run lint` | Tipos y lint (incluye `prisma/`) |
+| `npm test` / `npm run test:coverage` | Pruebas (requiere la base `*_test`) |
+| `npm run prisma:deploy` | Aplica las migraciones pendientes |
+| `npm run prisma:migrate` | Crea una migración nueva al cambiar el esquema (desarrollo) |
+| `npm run prisma:seed` | Datos de ejemplo ficticios |
+| `npm run prisma:import-legacy` | Importa el volcado del sistema anterior |
+| `npm run prisma:studio` | Explorador visual de la base |
 
-- `tsc` sin errores en `backend/` y `frontend/`, y `vite build` de produccion.
-- Migracion inicial generada y aplicada (`backend/prisma/migrations/`).
-- Carga completa de `backend/prisma/legacy/extraliebresdb.sql` via
-  `prisma:import-legacy`, verificada con `SELECT COUNT(*)` directo en
-  Postgres: 1804 alumnos, 25 promotores, 46 actividades extraescolares, 34
-  grupos y 1 semestre (coincide exactamente con el dump original).
-- Pruebas manuales en el navegador con los datos reales ya cargados: listado
-  y busqueda de alumnos (incluyendo uno con `sexo` en blanco, mostrado como
-  "—"), busqueda de actividades/promotores/grupos en los combos
-  `AsyncSelect`, "Ver roster" de un grupo, y generacion automatica de un
-  nuevo id de actividad extraescolar (`47-...`) a partir del maximo real
-  (46) — luego revertida para no dejar datos de prueba mezclados con los
-  reales.
-- Llamadas directas a la API (`/api/alumnos`, `/api/grupos`,
-  `/api/grupos/:idgrupo/alumnos`, `/api/busqueda/alumnos/:nocontrol/...`)
-  devolviendo los datos esperados.
+| Frontend | Descripción |
+| --- | --- |
+| `npm run dev` | Servidor de desarrollo (proxy de `/api`) |
+| `npm run build` / `npm run preview` | Build de producción y vista previa |
+| `npm test` / `npm run lint` | Pruebas y lint |
 
-Durante esa verificacion se corrigieron problemas que solo aparecen al
-compilar/ejecutar de verdad (no se detectan solo leyendo el codigo):
+## Seguridad y despliegue
 
-1. **Tipos de Zod vs. Prisma**: los esquemas con `.refine()`/`.superRefine()`
-   (grupos, promotores, semestres) generan `ZodEffects`, no `ZodObject`; el
-   middleware `validate()` solo aceptaba `AnyZodObject`. Se amplio a
-   `ZodTypeAny`. Los enums validados por Zod (`sexo`, `campus`, `primerdia`,
-   `segundodia`) tambien necesitan un cast explicito al tipo del enum de
-   Prisma al hacer `create`/`update`.
-2. **Prisma + Alpine**: la imagen `node:20-alpine` no trae las librerias de
-   OpenSSL que el motor de Prisma necesita en tiempo de ejecucion. Se agrego
-   `RUN apk add --no-cache openssl` en el `Dockerfile` del backend y
-   `binaryTargets = ["native", "linux-musl-openssl-3.0.x"]` en
-   `schema.prisma`. Tambien se movieron `prisma` y `tsx` a `dependencies`
-   (antes eran `devDependencies`) porque el contenedor de produccion
-   necesita ambos para correr migraciones y el seed con
-   `docker compose exec backend ...`.
-3. **`INSERT` partido en el dump**: phpMyAdmin divide los volcados grandes
-   en varios `INSERT INTO` por tabla — la tabla `alumno` del archivo real
-   viene en 4 bloques separados. La primera version del parser solo leia el
-   primer bloque (526 de 1804 alumnos); se corrigio para recorrer todas las
-   ocurrencias de `INSERT INTO` por tabla y concatenar sus filas.
+Ya resuelto:
 
-### Segunda ronda: modulo de Carreras, paginacion, borrado con advertencia
+- Puertos publicados solo en `127.0.0.1`; contraseña de la base fuera del
+  repositorio; Adminer solo en el perfil `dev`.
+- El volcado con datos reales nunca entra a la imagen de Docker
+  (`backend/.dockerignore`).
+- API con Helmet, CORS restringido y validación estricta; SPA con CSP y
+  cabeceras de seguridad; proceso de la API sin privilegios de root.
+- Respaldos automáticos y restauración documentada.
 
-Tras una auditoria completa (integridad de datos, seguridad, UX, backend),
-se implemento y **volvio a probar de punta a punta con Docker**:
+Pendiente antes de exponer la aplicación a una red:
 
-- Migracion regenerada desde cero (`prisma migrate diff` + edicion manual,
-  ya que `prisma migrate dev` no corre en un `docker exec` sin TTY) para
-  incluir la tabla `carrera`, el `CHECK` de `calificacion` y los indices
-  `pg_trgm`. Verificado con `\d alumnosgrupo` y `pg_indexes` en `psql`.
-- **Pagina de Carreras** completa (alta/edicion/borrado/busqueda) probada en
-  el navegador con las 16 carreras reales derivadas del dump.
-- **Selector de carrera en el formulario de Alumnos**: probado que
-  precarga la carrera correcta al editar (`AsyncSelect` con `value`
-  controlado) y que el nuevo `idcarrera` se guarda bien.
-- **Paginacion real** verificada en Alumnos (1804 registros -> "Mostrando
-  1-20 de 1802" tras dos borrados de prueba, "Pagina 1 de 91") y en Grupos.
-- **Flujo de borrado con advertencia**, probado tanto por API como en el
-  navegador (capturas del modal incluidas durante la sesion): alumno con
-  1 inscripcion -> `409` con el mensaje exacto -> modal de confirmacion ->
-  reintento con `?confirmar=true` -> borrado exitoso y cascada verificada
-  (`GET` del roster del grupo bajo de 1 a 0 inscripciones). Repetido para
-  `grupo`, `promotor` (5 grupos, 0 inscripciones) y `semestre` (33 grupos
-  quedarian sin semestre). Confirmado que `carrera` **bloquea siempre** sin
-  aceptar `?confirmar=true` cuando tiene alumnos asignados.
-- Se corrigio un bug real detectado en este ciclo: `ApiError.conflict()`
-  no aceptaba un segundo argumento (`details`), necesario para adjuntar el
-  detalle de impacto en los nuevos `409`; se le agrego como parametro
-  opcional.
-- Despues de probar los borrados (que alteran datos), se volvio a correr
-  `prisma:import-legacy` para dejar la base exactamente como la entrega el
-  dump original antes de apagar los contenedores (`docker compose down`).
+1. **Autenticación y autorización** (por ejemplo, sesión con cookie
+   `HttpOnly`/`Secure` o JWT de corta duración, contraseñas con bcrypt/argon2,
+   límite de intentos y roles para borrar y exportar) y una bitácora de
+   cambios de calificaciones y borrados.
+2. **HTTPS** en nginx (certificado institucional o Let's Encrypt); después,
+   agregar `Strict-Transport-Security` a `frontend/nginx/cabeceras-seguridad.conf`.
+3. **Límite de peticiones** por cliente (en nginx o con `express-rate-limit`).
+4. Copia de los respaldos fuera del equipo, cifrada.
 
-### Tercera ronda: se cerraron todos los pendientes salvo autenticacion
+## Historial
 
-Los puntos que la segunda ronda dejo abiertos ya se implementaron y se
-verificaron con **pruebas automatizadas reales** (no solo manuales):
-
-1. **Condicion de carrera en generacion de IDs** — resuelta con
-   `src/utils/retry.ts` (reintento transparente ante `P2002`). Verificada
-   con una prueba de integracion que dispara 5 `POST /api/extraescolares`
-   simultaneos: los 5 tienen exito con IDs distintos.
-2. **`/api/health`** ahora corre `SELECT 1` contra Postgres y responde `503`
-   si la base no contesta.
-3. **Filtros combinados + exportar CSV** en Alumnos (`idcarrera`, `campus`,
-   `sexo`, ademas del texto libre).
-4. **Toasts** reemplazando el `<Alert>` fijo en las 6 paginas con
-   alta/edicion/borrado.
-5. **Suite de pruebas automatizadas** (backend, `npm test` con **Vitest**):
-   - **53 pruebas**, 8 archivos: unitarias puras (generadores de ID,
-     `calificacionADesempeno`, `exigirConfirmacionSiHayImpacto`, el
-     reintento ante ID duplicado) y de validacion Zod (reglas de horario de
-     grupo, pares mes-inicio/mes-termino de semestre, `sexo` opcional de
-     alumno).
-   - **Pruebas de integracion reales**: levantan `createApp()` y le pegan
-     peticiones HTTP (via `supertest`) contra una base de datos Postgres
-     **separada** (`extraliebresdb_test`, nunca la de datos reales),
-     cubriendo paginacion, validacion de FK carrera->alumno, el flujo
-     completo de borrado con confirmacion (`alumno` y `grupo`), el bloqueo
-     sin excepcion de `carrera`, y la concurrencia de generacion de IDs.
-   - Para correrlas: crea la base `extraliebresdb_test` una vez
-     (`CREATE DATABASE extraliebresdb_test;` en el mismo Postgres) y aplica
-     las migraciones con `DATABASE_URL` apuntando a ella
-     (`npx prisma migrate deploy`). Luego `npm test` (usa `.env.test` si
-     `DATABASE_URL` no esta ya definido en el entorno).
-
-**Autenticacion sigue sin implementarse — a proposito.** Fue una decision
-explicita tomada al inicio del proyecto ("sin autenticacion por ahora") y
-no es un defecto a corregir por si solo; agregarla (login, JWT, proteger
-rutas) es un cambio de alcance que conviene decidir aparte, no colar como
-parte de "terminar pendientes". Sigue en el radar dado que la base ya tiene
-datos reales de 1804 alumnos.
-
-Si vuelves a levantar el proyecto en una maquina distinta y algo falla, es
-casi seguro un tema de entorno (variables de `.env`, version de Docker,
-puertos ocupados) y no del codigo en si.
+Las rondas de trabajo anteriores y sus verificaciones están en
+[docs/historial-desarrollo.md](docs/historial-desarrollo.md).

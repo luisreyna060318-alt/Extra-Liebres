@@ -1,22 +1,11 @@
-import { createContext, useCallback, useContext, useState } from "react";
+import { useCallback, useState } from "react";
+import { Toast, ToastContext, ToastTipo } from "./useToast";
 
-export type ToastTipo = "success" | "danger";
-
-interface Toast {
-  id: number;
-  tipo: ToastTipo;
-  mensaje: string;
-}
-
-interface ToastContextValue {
-  toasts: Toast[];
-  showToast: (tipo: ToastTipo, mensaje: string) => void;
-  dismissToast: (id: number) => void;
-}
-
-const ToastContext = createContext<ToastContextValue | null>(null);
-
-const DURACION_MS = 5000;
+// Los avisos de exito se ocultan solos; los de error permanecen hasta que el
+// usuario los cierra, para que alcance a leerlos (y a releerlos con lector
+// de pantalla). Se muestran como maximo los ultimos MAX_TOASTS.
+const DURACION_EXITO_MS = 5000;
+const MAX_TOASTS = 4;
 let siguienteId = 1;
 
 export function ToastProvider({ children }: { children: React.ReactNode }) {
@@ -29,8 +18,10 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   const showToast = useCallback(
     (tipo: ToastTipo, mensaje: string) => {
       const id = siguienteId++;
-      setToasts((actuales) => [...actuales, { id, tipo, mensaje }]);
-      setTimeout(() => dismissToast(id), DURACION_MS);
+      setToasts((actuales) => [...actuales, { id, tipo, mensaje }].slice(-MAX_TOASTS));
+      if (tipo === "success") {
+        setTimeout(() => dismissToast(id), DURACION_EXITO_MS);
+      }
     },
     [dismissToast]
   );
@@ -40,12 +31,4 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
       {children}
     </ToastContext.Provider>
   );
-}
-
-export function useToast(): ToastContextValue {
-  const ctx = useContext(ToastContext);
-  if (!ctx) {
-    throw new Error("useToast debe usarse dentro de un <ToastProvider>.");
-  }
-  return ctx;
 }

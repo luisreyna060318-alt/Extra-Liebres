@@ -1,4 +1,4 @@
-import { apiClient } from "../../lib/apiClient";
+import { apiClient, seg } from "../../lib/apiClient";
 import { PaginatedResponse } from "../../types/pagination";
 import { CreateSemestreInput, Semestre } from "./types";
 
@@ -19,5 +19,5 @@ export async function createSemestre(input: CreateSemestreInput): Promise<Semest
 }
 
 export async function deleteSemestre(idsemestre: string, confirmar: boolean): Promise<void> {
-  await apiClient.delete(`/semestres/${idsemestre}`, { params: { confirmar } });
+  await apiClient.delete(`/semestres/${seg(idsemestre)}`, { params: { confirmar } });
 }

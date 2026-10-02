@@ -9,3 +9,19 @@ export const queryClient = new QueryClient({
     },
   },
 });
+
+/** Claves raiz de las consultas; una mutacion invalida todas las que muestran lo que cambio. */
+export const CLAVES = {
+  alumnos: "alumnos",
+  carreras: "carreras",
+  promotores: "promotores",
+  semestres: "semestres",
+  extraescolares: "extraescolares",
+  grupos: "grupos",
+  roster: "roster-grupo",
+  historial: "historial-alumno",
+} as const;
+
+export function invalidar(cliente: QueryClient, ...claves: string[]): Promise<void[]> {
+  return Promise.all(claves.map((clave) => cliente.invalidateQueries({ queryKey: [clave] })));
+}

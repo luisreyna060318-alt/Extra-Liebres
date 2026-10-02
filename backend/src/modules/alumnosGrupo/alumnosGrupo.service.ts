@@ -1,10 +1,14 @@
+import { Prisma } from "@prisma/client";
 import { prisma } from "../../config/prisma";
 import { ApiError } from "../../utils/ApiError";
 import { calificacionADesempeno } from "../../utils/desempeno";
 import { EnrollBatchInput, UnenrollBatchInput } from "./alumnosGrupo.schema";
 
-async function asegurarGrupoExiste(idgrupo: string): Promise<void> {
-  const grupo = await prisma.grupo.findUnique({ where: { idgrupo }, select: { idgrupo: true } });
+async function asegurarGrupoExiste(
+  idgrupo: string,
+  db: Prisma.TransactionClient | typeof prisma = prisma
+): Promise<void> {
+  const grupo = await db.grupo.findUnique({ where: { idgrupo }, select: { idgrupo: true } });
   if (!grupo) {
     throw ApiError.notFound(`No existe un grupo con id ${idgrupo}.`);
   }
@@ -51,52 +55,63 @@ type ResultadoOperacion = {
   estado: "agregado" | "ya_inscrito" | "no_existe" | "eliminado" | "no_inscrito";
 };
 
+/**
+ * Inscribe un lote de alumnos en una sola transaccion: dos consultas para
+ * saber quien existe y quien ya esta inscrito, y una sola insercion.
+ */
 export async function inscribirAlumnos(idgrupo: string, input: EnrollBatchInput) {
-  await asegurarGrupoExiste(idgrupo);
+  return prisma.$transaction(async (tx) => {
+    await asegurarGrupoExiste(idgrupo, tx);
 
-  const resultados: ResultadoOperacion[] = [];
+    const nocontroles = Array.from(new Set(input.alumnos.map((a) => a.nocontrol)));
+    const [existentes, inscritos] = await Promise.all([
+      tx.alumno.findMany({ where: { nocontrol: { in: nocontroles } }, select: { nocontrol: true } }),
+      tx.alumnoGrupo.findMany({
+        where: { idgrupo, nocontrol: { in: nocontroles } },
+        select: { nocontrol: true },
+      }),
+    ]);
+    const existe = new Set(existentes.map((a) => a.nocontrol));
+    const yaInscrito = new Set(inscritos.map((i) => i.nocontrol));
 
-  for (const { nocontrol, calificacion } of input.alumnos) {
-    const alumno = await prisma.alumno.findUnique({ where: { nocontrol } });
-    if (!alumno) {
-      resultados.push({ nocontrol, estado: "no_existe" });
-      continue;
+    const resultados: ResultadoOperacion[] = [];
+    const nuevos: { nocontrol: string; idgrupo: string; calificacion: number; desempeno: string }[] = [];
+
+    for (const { nocontrol, calificacion } of input.alumnos) {
+      if (!existe.has(nocontrol)) {
+        resultados.push({ nocontrol, estado: "no_existe" });
+      } else if (yaInscrito.has(nocontrol)) {
+        resultados.push({ nocontrol, estado: "ya_inscrito" });
+      } else {
+        yaInscrito.add(nocontrol); // un mismo alumno repetido en el lote cuenta una sola vez
+        nuevos.push({ nocontrol, idgrupo, calificacion, desempeno: calificacionADesempeno(calificacion) });
+        resultados.push({ nocontrol, estado: "agregado" });
+      }
     }
 
-    const yaInscrito = await prisma.alumnoGrupo.findUnique({
-      where: { nocontrol_idgrupo: { nocontrol, idgrupo } },
-    });
-    if (yaInscrito) {
-      resultados.push({ nocontrol, estado: "ya_inscrito" });
-      continue;
+    if (nuevos.length > 0) {
+      await tx.alumnoGrupo.createMany({ data: nuevos, skipDuplicates: true });
     }
-
-    await prisma.alumnoGrupo.create({
-      data: { nocontrol, idgrupo, calificacion, desempeno: calificacionADesempeno(calificacion) },
-    });
-    resultados.push({ nocontrol, estado: "agregado" });
-  }
-
-  return resultados;
+    return resultados;
+  });
 }
 
 export async function retirarAlumnos(idgrupo: string, input: UnenrollBatchInput) {
-  await asegurarGrupoExiste(idgrupo);
+  return prisma.$transaction(async (tx) => {
+    await asegurarGrupoExiste(idgrupo, tx);
 
-  const resultados: ResultadoOperacion[] = [];
-
-  for (const nocontrol of input.nocontrol) {
-    const inscripcion = await prisma.alumnoGrupo.findUnique({
-      where: { nocontrol_idgrupo: { nocontrol, idgrupo } },
+    const nocontroles = Array.from(new Set(input.nocontrol));
+    const inscritos = await tx.alumnoGrupo.findMany({
+      where: { idgrupo, nocontrol: { in: nocontroles } },
+      select: { nocontrol: true },
     });
-    if (!inscripcion) {
-      resultados.push({ nocontrol, estado: "no_inscrito" });
-      continue;
-    }
+    const estaInscrito = new Set(inscritos.map((i) => i.nocontrol));
 
-    await prisma.alumnoGrupo.delete({ where: { nocontrol_idgrupo: { nocontrol, idgrupo } } });
-    resultados.push({ nocontrol, estado: "eliminado" });
-  }
+    await tx.alumnoGrupo.deleteMany({ where: { idgrupo, nocontrol: { in: [...estaInscrito] } } });
 
-  return resultados;
+    return input.nocontrol.map<ResultadoOperacion>((nocontrol) => ({
+      nocontrol,
+      estado: estaInscrito.has(nocontrol) ? "eliminado" : "no_inscrito",
+    }));
+  });
 }

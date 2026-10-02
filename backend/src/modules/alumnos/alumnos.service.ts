@@ -1,6 +1,8 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "../../config/prisma";
 import { ApiError } from "../../utils/ApiError";
+import { bloquearFila } from "../../utils/bloqueo";
+import { cadaPalabraEnAlgunCampo } from "../../utils/busqueda";
 import { exigirConfirmacionSiHayImpacto } from "../../utils/confirmarBorrado";
 import { calcularSkip, paginar } from "../../utils/pagination";
 import { CreateAlumnoInput, FiltrosAlumnos, UpdateAlumnoInput } from "./alumnos.schema";
@@ -12,16 +14,13 @@ const EXPORT_MAX = 10_000;
 function construirWhereAlumnos(filtros: FiltrosAlumnos): Prisma.AlumnoWhereInput | undefined {
   const and: Prisma.AlumnoWhereInput[] = [];
 
-  if (filtros.search) {
-    and.push({
-      OR: [
-        { nocontrol: { contains: filtros.search } },
-        { nombre: { contains: filtros.search, mode: "insensitive" } },
-        { appaterno: { contains: filtros.search, mode: "insensitive" } },
-        { apmaterno: { contains: filtros.search, mode: "insensitive" } },
-      ],
-    });
-  }
+  const busqueda = cadaPalabraEnAlgunCampo<Prisma.AlumnoWhereInput>(filtros.search, (palabra) => [
+    { nocontrol: { contains: palabra } },
+    { nombre: { contains: palabra, mode: "insensitive" } },
+    { appaterno: { contains: palabra, mode: "insensitive" } },
+    { apmaterno: { contains: palabra, mode: "insensitive" } },
+  ]);
+  if (busqueda) and.push(busqueda);
   if (filtros.idcarrera) and.push({ idcarrera: filtros.idcarrera });
   if (filtros.campus) and.push({ campus: filtros.campus });
   if (filtros.sexo) and.push({ sexo: filtros.sexo });
@@ -82,7 +81,7 @@ export async function createAlumno(data: CreateAlumnoInput) {
   await asegurarCarreraExiste(data.idcarrera);
 
   return prisma.alumno.create({
-    data: data as unknown as Prisma.AlumnoUncheckedCreateInput,
+    data: data as Prisma.AlumnoUncheckedCreateInput,
     include: INCLUDE_CARRERA,
   });
 }
@@ -94,20 +93,24 @@ export async function updateAlumno(nocontrol: string, data: UpdateAlumnoInput) {
   }
   return prisma.alumno.update({
     where: { nocontrol },
-    data: data as unknown as Prisma.AlumnoUncheckedUpdateInput,
+    data: data as Prisma.AlumnoUncheckedUpdateInput,
     include: INCLUDE_CARRERA,
   });
 }
 
 export async function deleteAlumno(nocontrol: string, confirmar: boolean) {
-  await getAlumnoByNocontrol(nocontrol);
+  await prisma.$transaction(async (tx) => {
+    if (!(await bloquearFila(tx, "alumno", "nocontrol", nocontrol))) {
+      throw ApiError.notFound(`No existe un alumno con numero de control ${nocontrol}.`);
+    }
 
-  const inscripciones = await prisma.alumnoGrupo.count({ where: { nocontrol } });
-  exigirConfirmacionSiHayImpacto({
-    confirmar,
-    mensaje: `Este alumno tiene ${inscripciones} inscripcion(es) con calificacion registrada en su historial. Si continuas, se borrara ese historial junto con el alumno.`,
-    detalles: { inscripcionesAfectadas: inscripciones },
+    const inscripciones = await tx.alumnoGrupo.count({ where: { nocontrol } });
+    exigirConfirmacionSiHayImpacto({
+      confirmar,
+      mensaje: `Este alumno tiene ${inscripciones} inscripcion(es) con calificacion registrada en su historial. Si continuas, se borrara ese historial junto con el alumno.`,
+      detalles: { inscripcionesAfectadas: inscripciones },
+    });
+
+    await tx.alumno.delete({ where: { nocontrol } });
   });
-
-  await prisma.alumno.delete({ where: { nocontrol } });
 }

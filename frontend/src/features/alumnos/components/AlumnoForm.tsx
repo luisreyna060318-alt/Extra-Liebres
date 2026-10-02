@@ -1,19 +1,29 @@
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useId, useState } from "react";
 import AsyncSelect from "react-select/async";
 import { fetchCarreras } from "../../carreras/api";
-import { Alumno, Campus, CreateAlumnoInput, Sexo } from "../types";
+import { Alumno, Campus, CreateAlumnoInput, Sexo, UpdateAlumnoInput } from "../types";
 
 interface OpcionCarrera {
   value: string;
   label: string;
 }
 
-const ESTADO_INICIAL: CreateAlumnoInput = {
+interface EstadoFormulario {
+  nocontrol: string;
+  nombre: string;
+  appaterno: string;
+  apmaterno: string;
+  sexo: Sexo | "";
+  idcarrera: string;
+  campus: Campus;
+}
+
+const ESTADO_INICIAL: EstadoFormulario = {
   nocontrol: "",
   nombre: "",
   appaterno: "",
   apmaterno: "",
-  sexo: undefined,
+  sexo: "",
   idcarrera: "",
   campus: "CAMPUS_1",
 };
@@ -21,7 +31,7 @@ const ESTADO_INICIAL: CreateAlumnoInput = {
 interface AlumnoFormProps {
   alumnoEnEdicion: Alumno | null;
   onCrear: (input: CreateAlumnoInput) => void;
-  onActualizar: (input: CreateAlumnoInput) => void;
+  onActualizar: (input: UpdateAlumnoInput) => void;
   onCancelar: () => void;
   enviando: boolean;
 }
@@ -33,7 +43,8 @@ export function AlumnoForm({
   onCancelar,
   enviando,
 }: AlumnoFormProps) {
-  const [form, setForm] = useState<CreateAlumnoInput>(ESTADO_INICIAL);
+  const id = useId();
+  const [form, setForm] = useState<EstadoFormulario>(ESTADO_INICIAL);
   const [carreraSeleccionada, setCarreraSeleccionada] = useState<OpcionCarrera | null>(null);
   const editando = Boolean(alumnoEnEdicion);
 
@@ -44,7 +55,7 @@ export function AlumnoForm({
         nombre: alumnoEnEdicion.nombre,
         appaterno: alumnoEnEdicion.appaterno,
         apmaterno: alumnoEnEdicion.apmaterno ?? "",
-        sexo: alumnoEnEdicion.sexo ?? undefined,
+        sexo: alumnoEnEdicion.sexo ?? "",
         idcarrera: alumnoEnEdicion.idcarrera,
         campus: alumnoEnEdicion.campus,
       });
@@ -65,10 +76,20 @@ export function AlumnoForm({
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
+    // Los campos opcionales vacios se envian como null para que la API los
+    // borre (al editar, omitirlos dejaria el valor anterior).
+    const comunes = {
+      nombre: form.nombre,
+      appaterno: form.appaterno,
+      apmaterno: form.apmaterno.trim() || null,
+      sexo: form.sexo || null,
+      idcarrera: form.idcarrera,
+      campus: form.campus,
+    };
     if (editando) {
-      onActualizar(form);
+      onActualizar(comunes);
     } else {
-      onCrear(form);
+      onCrear({ nocontrol: form.nocontrol, ...comunes });
     }
   }
 
@@ -77,20 +98,27 @@ export function AlumnoForm({
       <h2 className="h5 label-subrayado">{editando ? "Editar alumno" : "Registrar alumno"}</h2>
       <div className="row g-3">
         <div className="col-md-2">
-          <label className="form-label">No. control</label>
+          <label className="form-label" htmlFor={`${id}-nocontrol`}>
+            No. control
+          </label>
           <input
+            id={`${id}-nocontrol`}
             className="form-control"
             required
             maxLength={11}
             pattern="\d+"
+            inputMode="numeric"
             disabled={editando}
             value={form.nocontrol}
             onChange={(e) => setForm({ ...form, nocontrol: e.target.value.replace(/\D/g, "") })}
           />
         </div>
         <div className="col-md-3">
-          <label className="form-label">Nombre</label>
+          <label className="form-label" htmlFor={`${id}-nombre`}>
+            Nombre
+          </label>
           <input
+            id={`${id}-nombre`}
             className="form-control"
             required
             maxLength={50}
@@ -99,8 +127,11 @@ export function AlumnoForm({
           />
         </div>
         <div className="col-md-3">
-          <label className="form-label">Apellido paterno</label>
+          <label className="form-label" htmlFor={`${id}-appaterno`}>
+            Apellido paterno
+          </label>
           <input
+            id={`${id}-appaterno`}
             className="form-control"
             required
             maxLength={50}
@@ -109,8 +140,11 @@ export function AlumnoForm({
           />
         </div>
         <div className="col-md-3">
-          <label className="form-label">Apellido materno</label>
+          <label className="form-label" htmlFor={`${id}-apmaterno`}>
+            Apellido materno
+          </label>
           <input
+            id={`${id}-apmaterno`}
             className="form-control"
             maxLength={50}
             value={form.apmaterno}
@@ -119,13 +153,14 @@ export function AlumnoForm({
         </div>
 
         <div className="col-md-3">
-          <label className="form-label">Sexo</label>
+          <label className="form-label" htmlFor={`${id}-sexo`}>
+            Sexo
+          </label>
           <select
+            id={`${id}-sexo`}
             className="form-select"
-            value={form.sexo ?? ""}
-            onChange={(e) =>
-              setForm({ ...form, sexo: (e.target.value || undefined) as Sexo | undefined })
-            }
+            value={form.sexo}
+            onChange={(e) => setForm({ ...form, sexo: e.target.value as Sexo | "" })}
           >
             <option value="">-- No especificado --</option>
             <option value="MASCULINO">MASCULINO</option>
@@ -133,14 +168,18 @@ export function AlumnoForm({
           </select>
         </div>
         <div className="col-md-6">
-          <label className="form-label">Carrera</label>
+          <label className="form-label" htmlFor={`${id}-carrera`}>
+            Carrera
+          </label>
           <AsyncSelect<OpcionCarrera>
+            inputId={`${id}-carrera`}
             cacheOptions
             defaultOptions
             value={carreraSeleccionada}
             loadOptions={cargarCarreras}
             placeholder="Buscar carrera..."
             noOptionsMessage={() => "Sin resultados. Registra la carrera en el modulo Carreras."}
+            loadingMessage={() => "Buscando..."}
             onChange={(opcion) => {
               setCarreraSeleccionada(opcion);
               setForm({ ...form, idcarrera: opcion?.value ?? "" });
@@ -148,8 +187,11 @@ export function AlumnoForm({
           />
         </div>
         <div className="col-md-3">
-          <label className="form-label">Campus</label>
+          <label className="form-label" htmlFor={`${id}-campus`}>
+            Campus
+          </label>
           <select
+            id={`${id}-campus`}
             className="form-select"
             value={form.campus}
             onChange={(e) => setForm({ ...form, campus: e.target.value as Campus })}
@@ -159,6 +201,8 @@ export function AlumnoForm({
           </select>
         </div>
       </div>
+
+      {!form.idcarrera && <p className="form-text mb-0 mt-2">Selecciona una carrera para continuar.</p>}
 
       <div className="btn-group-actions mt-3">
         <button type="submit" className="btn btn-brand" disabled={enviando || !form.idcarrera}>

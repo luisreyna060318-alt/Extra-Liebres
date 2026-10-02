@@ -7,11 +7,12 @@ export interface OpcionGrupo {
 }
 
 interface GrupoSelectorProps {
+  inputId?: string;
   value?: OpcionGrupo | null;
   onSeleccionar: (idgrupo: string | null) => void;
 }
 
-export function GrupoSelector({ value, onSeleccionar }: GrupoSelectorProps) {
+export function GrupoSelector({ inputId, value, onSeleccionar }: GrupoSelectorProps) {
   async function cargarGrupos(term: string): Promise<OpcionGrupo[]> {
     const resultado = await fetchGrupos({ search: term, pageSize: 20 });
     return resultado.data.map((g) => ({
@@ -22,11 +23,14 @@ export function GrupoSelector({ value, onSeleccionar }: GrupoSelectorProps) {
 
   return (
     <AsyncSelect<OpcionGrupo>
+      inputId={inputId}
       cacheOptions
       defaultOptions
       value={value}
       loadOptions={cargarGrupos}
       placeholder="Buscar grupo por actividad, promotor o id..."
+      noOptionsMessage={() => "Sin resultados."}
+      loadingMessage={() => "Buscando..."}
       onChange={(opcion) => onSeleccionar(opcion?.value ?? null)}
       isClearable
     />
